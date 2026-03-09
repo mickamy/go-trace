@@ -13,6 +13,14 @@ import (
 	"github.com/mickamy/go-trace/tracer"
 )
 
+// Re-export SpanKind constants so instrumented code can reference them
+// via the single runtime import.
+const (
+	SpanKindFunction = tracer.SpanKindFunction
+	SpanKindHTTP     = tracer.SpanKindHTTP
+	SpanKindSQL      = tracer.SpanKindSQL
+)
+
 // contextKey is an unexported type to prevent collisions.
 type contextKey struct{}
 
