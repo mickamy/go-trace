@@ -1,6 +1,9 @@
 package tracer
 
-import "time"
+import (
+	"maps"
+	"time"
+)
 
 // SpanKind represents the type of operation a span tracks.
 type SpanKind int
@@ -64,9 +67,7 @@ func (s Span) WithParentID(parentID string) Span {
 // WithAttr returns a new Span with the key-value pair added.
 func (s Span) WithAttr(key, value string) Span {
 	newAttrs := make(map[string]string, len(s.Attrs)+1)
-	for k, v := range s.Attrs {
-		newAttrs[k] = v
-	}
+	maps.Copy(newAttrs, s.Attrs)
 	newAttrs[key] = value
 	s.Attrs = newAttrs
 	return s

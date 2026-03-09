@@ -1,6 +1,9 @@
 package tracer
 
-import "time"
+import (
+	"maps"
+	"time"
+)
 
 // EventType represents the kind of trace event.
 type EventType int
@@ -52,9 +55,7 @@ func NewSpanEndEvent(spanID, traceID string, t time.Time, attrs map[string]strin
 	var cloned map[string]string
 	if len(attrs) > 0 {
 		cloned = make(map[string]string, len(attrs))
-		for k, v := range attrs {
-			cloned[k] = v
-		}
+		maps.Copy(cloned, attrs)
 	}
 	return Event{
 		Type:    EventSpanEnd,
