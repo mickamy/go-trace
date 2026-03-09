@@ -190,3 +190,158 @@ func TestRewrite_InvalidSource(t *testing.T) {
 		t.Error("expected error for invalid source")
 	}
 }
+
+// --- SQL rewriting tests ---
+
+func TestRewrite_SQLOpen(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "database/sql"
+
+func setup() {
+	db, err := sql.Open("postgres", "host=localhost")
+	_ = db
+	_ = err
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	result := string(got)
+	if !strings.Contains(result, "gotraceruntime.OpenDB(__gotraceTracer,") {
+		t.Errorf("expected gotraceruntime.OpenDB call, got:\n%s", result)
+	}
+	if strings.Contains(result, "sql.Open") {
+		t.Error("sql.Open should be replaced")
+	}
+}
+
+func TestRewrite_SQLOpen_AlreadyRewritten(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import gotraceruntime "github.com/mickamy/go-trace/runtime"
+
+func setup() {
+	db, err := gotraceruntime.OpenDB(__gotraceTracer, "postgres", "host=localhost")
+	_ = db
+	_ = err
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	count := strings.Count(string(got), "OpenDB")
+	if count != 1 {
+		t.Errorf("OpenDB count = %d, want 1 (should not double-wrap)", count)
+	}
+}
+
+func TestRewrite_SQLOpen_MultipleCalls(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "database/sql"
+
+func setup() {
+	db1, _ := sql.Open("postgres", "dsn1")
+	db2, _ := sql.Open("mysql", "dsn2")
+	_ = db1
+	_ = db2
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	count := strings.Count(string(got), "gotraceruntime.OpenDB")
+	if count != 2 {
+		t.Errorf("OpenDB count = %d, want 2", count)
+	}
+}
+
+// --- HTTP rewriting tests ---
+
+func TestRewrite_HTTPListenAndServe(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "net/http"
+
+func main() {
+	http.ListenAndServe(":8080", mux)
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	result := string(got)
+	if !strings.Contains(result, "gotraceruntime.Middleware(__gotraceTracer, mux)") {
+		t.Errorf("expected Middleware wrapping, got:\n%s", result)
+	}
+}
+
+func TestRewrite_HTTPListenAndServeTLS(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "net/http"
+
+func main() {
+	http.ListenAndServeTLS(":443", "cert.pem", "key.pem", handler)
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	result := string(got)
+	if !strings.Contains(result, "gotraceruntime.Middleware(__gotraceTracer, handler)") {
+		t.Errorf("expected Middleware wrapping, got:\n%s", result)
+	}
+}
+
+func TestRewrite_HTTPListenAndServe_AlreadyWrapped(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import (
+	"net/http"
+	gotraceruntime "github.com/mickamy/go-trace/runtime"
+)
+
+func main() {
+	http.ListenAndServe(":8080", gotraceruntime.Middleware(__gotraceTracer, mux))
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	count := strings.Count(string(got), "Middleware")
+	if count != 1 {
+		t.Errorf("Middleware count = %d, want 1 (should not double-wrap)", count)
+	}
+}

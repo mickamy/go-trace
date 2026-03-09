@@ -12,8 +12,11 @@ import (
 
 const tracerImportPath = `"github.com/mickamy/go-trace/runtime"`
 
-// Rewrite parses the given Go source and inserts tracer.Enter/finish calls
-// into exported methods. It returns the rewritten source.
+// Rewrite parses the given Go source and inserts tracing instrumentation.
+// It handles:
+//   - Function/method tracing (Enter/Exit)
+//   - sql.Open → gotraceruntime.OpenDB
+//   - http.ListenAndServe handler wrapping
 func Rewrite(src []byte) ([]byte, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
@@ -21,7 +24,11 @@ func Rewrite(src []byte) ([]byte, error) {
 		return nil, fmt.Errorf("parse source: %w", err)
 	}
 
-	if !rewriteFuncs(file) {
+	funcsMod := rewriteFuncs(file)
+	sqlMod := rewriteSQLOpen(file)
+	httpMod := rewriteHTTPListenAndServe(file)
+
+	if !funcsMod && !sqlMod && !httpMod {
 		return src, nil
 	}
 
@@ -67,6 +74,121 @@ func rewriteFuncs(file *ast.File) bool {
 	})
 
 	return modified
+}
+
+// rewriteSQLOpen replaces sql.Open(...) with gotraceruntime.OpenDB(__gotraceTracer, ...).
+// Returns true if any call was rewritten.
+func rewriteSQLOpen(file *ast.File) bool {
+	modified := false
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if ident.Name != "sql" || sel.Sel.Name != "Open" {
+			return true
+		}
+
+		// sql.Open(driver, dsn) → gotraceruntime.OpenDB(__gotraceTracer, driver, dsn)
+		ident.Name = "gotraceruntime"
+		sel.Sel.Name = "OpenDB"
+		call.Args = append([]ast.Expr{ast.NewIdent("__gotraceTracer")}, call.Args...)
+		modified = true
+		return true
+	})
+
+	return modified
+}
+
+// rewriteHTTPListenAndServe wraps the handler argument in
+// http.ListenAndServe(addr, handler) with gotraceruntime.Middleware.
+// Also handles http.ListenAndServeTLS.
+// Returns true if any call was rewritten.
+func rewriteHTTPListenAndServe(file *ast.File) bool {
+	modified := false
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if ident.Name != "http" {
+			return true
+		}
+
+		handlerIdx := -1
+		switch sel.Sel.Name {
+		case "ListenAndServe":
+			if len(call.Args) == 2 {
+				handlerIdx = 1
+			}
+		case "ListenAndServeTLS":
+			if len(call.Args) == 4 {
+				handlerIdx = 3
+			}
+		default:
+			return true
+		}
+
+		if handlerIdx < 0 {
+			return true
+		}
+
+		// Skip if already wrapped
+		if isMiddlewareWrapped(call.Args[handlerIdx]) {
+			return true
+		}
+
+		// handler → gotraceruntime.Middleware(__gotraceTracer, handler)
+		call.Args[handlerIdx] = &ast.CallExpr{
+			Fun: &ast.SelectorExpr{
+				X:   ast.NewIdent("gotraceruntime"),
+				Sel: ast.NewIdent("Middleware"),
+			},
+			Args: []ast.Expr{
+				ast.NewIdent("__gotraceTracer"),
+				call.Args[handlerIdx],
+			},
+		}
+		modified = true
+		return true
+	})
+
+	return modified
+}
+
+// isMiddlewareWrapped checks if the expression is already a gotraceruntime.Middleware call.
+func isMiddlewareWrapped(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	return ident.Name == "gotraceruntime" && sel.Sel.Name == "Middleware"
 }
 
 // contextParam returns the name of the first parameter if its type is

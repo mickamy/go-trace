@@ -19,8 +19,7 @@ func TestMiddleware_TracesRequest(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/users", nil)
-	req = req.WithContext(t.Context())
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/users", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
@@ -75,8 +74,7 @@ func TestMiddleware_CapturesStatusCode(t *testing.T) {
 				w.WriteHeader(tt.status)
 			}))
 
-			req := httptest.NewRequest(http.MethodGet, "/test", nil)
-			req = req.WithContext(t.Context())
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/test", nil)
 			handler.ServeHTTP(httptest.NewRecorder(), req)
 
 			events := rec.Events()
@@ -102,8 +100,7 @@ func TestMiddleware_DefaultStatus200(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req = req.WithContext(t.Context())
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	events := rec.Events()
@@ -119,14 +116,12 @@ func TestMiddleware_PropagatesContext(t *testing.T) {
 	rec := &recordingSender{}
 	tr := runtime.NewTracer(rec)
 
-	var innerTraceID string
 	handler := runtime.Middleware(tr, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		_, finish := tr.Enter(r.Context(), "InnerFunc", tracer.SpanKindFunction)
 		finish(nil)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/login", nil)
-	req = req.WithContext(t.Context())
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/login", nil)
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	events := rec.Events()
@@ -136,10 +131,9 @@ func TestMiddleware_PropagatesContext(t *testing.T) {
 
 	httpStart := events[0]
 	innerStart := events[1]
-	innerTraceID = innerStart.TraceID
 
-	if innerTraceID != httpStart.TraceID {
-		t.Errorf("inner TraceID = %q, want %q (same as HTTP span)", innerTraceID, httpStart.TraceID)
+	if innerStart.TraceID != httpStart.TraceID {
+		t.Errorf("inner TraceID = %q, want %q (same as HTTP span)", innerStart.TraceID, httpStart.TraceID)
 	}
 	if innerStart.ParentID != httpStart.SpanID {
 		t.Errorf("inner ParentID = %q, want %q (HTTP span ID)", innerStart.ParentID, httpStart.SpanID)

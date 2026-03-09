@@ -198,3 +198,49 @@ func B(ctx context.Context) {}
 		}
 	}
 }
+
+func TestInjector_GeneratesInitFiles(t *testing.T) {
+	t.Parallel()
+
+	srcDir := setupProject(t, map[string]string{
+		"handler/user.go": `package handler
+
+import "context"
+
+func Get(ctx context.Context) {}
+`,
+		"util/strings.go": `package util
+
+func ToUpper(s string) string { return s }
+`,
+	})
+
+	cfg := config.Default()
+	inj := instrument.NewInjector(cfg)
+	tmpDir, err := inj.Inject(srcDir)
+	if err != nil {
+		t.Fatalf("Inject() error: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
+	// handler package was instrumented → init file should exist
+	initData, err := os.ReadFile(filepath.Join(tmpDir, "handler", "gotrace_init.go"))
+	if err != nil {
+		t.Fatalf("read init file: %v", err)
+	}
+	content := string(initData)
+	if !strings.Contains(content, "package handler") {
+		t.Error("init file should have correct package name")
+	}
+	if !strings.Contains(content, "__gotraceTracer") {
+		t.Error("init file should declare __gotraceTracer")
+	}
+	if !strings.Contains(content, "GlobalTracer()") {
+		t.Error("init file should call GlobalTracer()")
+	}
+
+	// util package was NOT instrumented → no init file
+	if _, err := os.Stat(filepath.Join(tmpDir, "util", "gotrace_init.go")); !os.IsNotExist(err) {
+		t.Error("non-instrumented package should not have init file")
+	}
+}
