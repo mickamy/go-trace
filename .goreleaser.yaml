@@ -1,0 +1,37 @@
+version: 2
+
+release:
+  mode: replace
+
+builds:
+  - id: go-trace
+    main: .
+    binary: go-trace
+    ldflags:
+      - -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - ids:
+      - go-trace
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - name: go-trace
+    homepage: https://github.com/mickamy/go-trace
+    description: Instantly visualize request flows in your Go application — no infrastructure, no code changes.
+    install: |
+      bin.install "go-trace"
+    repository:
+      owner: mickamy
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+
+changelog: { }
