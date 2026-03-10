@@ -1,10 +1,10 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -27,36 +27,26 @@ type AppExitMsg struct{}
 
 // Model is the bubbletea model for the go-trace TUI.
 type Model struct {
-	traceView  viewport.Model
-	appView    viewport.Model
 	traces     []string
 	appLines   []string
 	width      int
 	height     int
-	ready      bool
 	quitting   bool
 	tracesOnly bool
+	follow     bool
+
+	traceScroll int
+	appScroll   int
 }
-
-var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("205")).
-			PaddingLeft(1)
-
-	borderStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62"))
-)
 
 // New creates a new TUI model with two panes (traces + app output).
 func New() Model {
-	return Model{}
+	return Model{follow: true}
 }
 
 // NewTracesOnly creates a TUI model with only the traces pane.
 func NewTracesOnly() Model {
-	return Model{tracesOnly: true}
+	return Model{tracesOnly: true, follow: true}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -66,29 +56,25 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			m.quitting = true
-			return m, tea.Quit
-		}
+		return m.handleKey(msg)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m = m.updateLayout()
-		m.ready = true
 		return m, nil
 
 	case TraceMsg:
 		m.traces = append(m.traces, msg.Tree)
-		m.traceView.SetContent(strings.Join(m.traces, "\n"))
-		m.traceView.GotoBottom()
+		if m.follow {
+			m.traceScroll = m.maxTraceScroll()
+		}
 		return m, nil
 
 	case AppOutputMsg:
 		m.appLines = append(m.appLines, msg.Line)
-		m.appView.SetContent(strings.Join(m.appLines, "\n"))
-		m.appView.GotoBottom()
+		if m.follow {
+			m.appScroll = m.maxAppScroll()
+		}
 		return m, nil
 
 	case AppExitMsg:
@@ -96,72 +82,162 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	var cmd tea.Cmd
-	m.traceView, cmd = m.traceView.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
-func (m Model) updateLayout() Model {
-	contentWidth := m.width - 2 // border
+func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	case "j", "down":
+		m.traceScroll = min(m.traceScroll+1, m.maxTraceScroll())
+		m.follow = m.traceScroll >= m.maxTraceScroll()
+	case "k", "up":
+		m.traceScroll = max(m.traceScroll-1, 0)
+		m.follow = false
+	case "ctrl+d":
+		m.traceScroll = min(m.traceScroll+m.traceVisibleRows()/2, m.maxTraceScroll())
+		m.follow = m.traceScroll >= m.maxTraceScroll()
+	case "ctrl+u":
+		m.traceScroll = max(m.traceScroll-m.traceVisibleRows()/2, 0)
+		m.follow = false
+	case "G":
+		m.traceScroll = m.maxTraceScroll()
+		m.follow = true
+	case "g":
+		m.traceScroll = 0
+		m.follow = false
+	}
+	return m, nil
+}
 
+// traceLines returns all trace content as individual lines.
+func (m Model) traceLines() []string {
+	if len(m.traces) == 0 {
+		return nil
+	}
+	return strings.Split(strings.Join(m.traces, "\n"), "\n")
+}
+
+func (m Model) traceVisibleRows() int {
 	if m.tracesOnly {
-		traceHeight := m.height - 4
-		if traceHeight < 3 {
-			traceHeight = 3
-		}
-		m.traceView = viewport.New(contentWidth, traceHeight)
-		m.traceView.SetContent(strings.Join(m.traces, "\n"))
-		return m
+		return max(m.height-4, 3) // border(2) + title line(1) + footer(1)
 	}
+	return max(m.height*2/3-3, 3)
+}
 
-	traceHeight := m.height*2/3 - 3
-	appHeight := m.height - traceHeight - 5
+func (m Model) appVisibleRows() int {
+	return max(m.height-m.traceVisibleRows()-5, 3)
+}
 
-	if traceHeight < 3 {
-		traceHeight = 3
-	}
-	if appHeight < 3 {
-		appHeight = 3
-	}
+func (m Model) maxTraceScroll() int {
+	return max(len(m.traceLines())-m.traceVisibleRows(), 0)
+}
 
-	m.traceView = viewport.New(contentWidth, traceHeight)
-	m.traceView.SetContent(strings.Join(m.traces, "\n"))
-
-	m.appView = viewport.New(contentWidth, appHeight)
-	m.appView.SetContent(strings.Join(m.appLines, "\n"))
-
-	return m
+func (m Model) maxAppScroll() int {
+	return max(len(m.appLines)-m.appVisibleRows(), 0)
 }
 
 func (m Model) View() string {
-	if !m.ready {
+	if m.width == 0 {
 		return "Initializing..."
 	}
 	if m.quitting {
 		return ""
 	}
 
-	traceTitle := titleStyle.Render("Traces")
-
-	traceBox := borderStyle.
-		Width(m.width - 2).
-		Render(traceTitle + "\n" + m.traceView.View())
-
-	help := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		PaddingLeft(2).
-		Render("q: quit")
+	traceBox := m.renderTracePane()
+	footer := m.renderFooter()
 
 	if m.tracesOnly {
-		return traceBox + "\n" + help
+		return traceBox + "\n" + footer
 	}
 
-	appTitle := titleStyle.Render("App Output")
-	appBox := borderStyle.
-		Width(m.width - 2).
-		Render(appTitle + "\n" + m.appView.View())
+	appBox := m.renderAppPane()
+	return traceBox + "\n" + appBox + "\n" + footer
+}
 
-	return traceBox + "\n" + appBox + "\n" + help
+func (m Model) renderTracePane() string {
+	innerWidth := max(m.width-4, 20)
+	visibleRows := m.traceVisibleRows()
+
+	lines := m.traceLines()
+	start := m.traceScroll
+	end := min(start+visibleRows, len(lines))
+	if start > len(lines) {
+		start = len(lines)
+	}
+	visible := lines[start:end]
+
+	// Pad to fill viewport.
+	for len(visible) < visibleRows {
+		visible = append(visible, "")
+	}
+
+	content := strings.Join(visible, "\n")
+	return m.renderBox(innerWidth, content, m.traceTitle())
+}
+
+func (m Model) renderAppPane() string {
+	innerWidth := max(m.width-4, 20)
+	visibleRows := m.appVisibleRows()
+
+	start := m.appScroll
+	end := min(start+visibleRows, len(m.appLines))
+	if start > len(m.appLines) {
+		start = len(m.appLines)
+	}
+	visible := m.appLines[start:end]
+
+	for len(visible) < visibleRows {
+		visible = append(visible, "")
+	}
+
+	content := strings.Join(visible, "\n")
+	return m.renderBox(innerWidth, content, " App Output ")
+}
+
+func (m Model) traceTitle() string {
+	n := len(m.traces)
+	title := fmt.Sprintf(" go-trace (%d traces) ", n)
+	if m.follow {
+		title += "[following] "
+	}
+	return title
+}
+
+func (m Model) renderBox(innerWidth int, content, title string) string {
+	borderColor := lipgloss.Color("240")
+	border := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Width(innerWidth).
+		BorderForeground(borderColor)
+
+	box := border.Render(content)
+	boxLines := strings.Split(box, "\n")
+
+	if len(boxLines) > 0 {
+		borderFg := lipgloss.NewStyle().Foreground(borderColor)
+		titleStyle := lipgloss.NewStyle().Bold(true)
+		dashes := max(innerWidth-len([]rune(title)), 0)
+		boxLines[0] = borderFg.Render("╭") +
+			titleStyle.Render(title) +
+			borderFg.Render(strings.Repeat("─", dashes)+"╮")
+	}
+
+	return strings.Join(boxLines, "\n")
+}
+
+func (m Model) renderFooter() string {
+	faint := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	items := []string{
+		"j/k: scroll",
+		"ctrl+d/u: page",
+		"G/g: bottom/top",
+		"q: quit",
+	}
+	return faint.Render("  " + strings.Join(items, "  "))
 }
 
 // Bridge connects the tracer collector to the TUI via bubbletea messages.
@@ -195,7 +271,7 @@ func (b *Bridge) OnSpan(traceID string, span tracer.Span) {
 	}
 }
 
-// AppWriter returns an io.Writer that sends each line to the TUI
+// AppWriter is an io.Writer that sends each line to the TUI
 // as an AppOutputMsg.
 type AppWriter struct {
 	program *tea.Program
