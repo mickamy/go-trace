@@ -48,7 +48,9 @@ func (c *Collector) Traces() map[string][]Span {
 	out := make(map[string][]Span, len(c.traces))
 	for k, v := range c.traces {
 		copied := make([]Span, len(v))
-		copy(copied, v)
+		for i, span := range v {
+			copied[i] = span.Clone()
+		}
 		out[k] = copied
 	}
 	return out

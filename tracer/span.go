@@ -73,6 +73,21 @@ func (s Span) WithAttr(key, value string) Span {
 	return s
 }
 
+// Clone returns a deep copy of the span, including Attrs and Children.
+func (s Span) Clone() Span {
+	if s.Attrs != nil {
+		s.Attrs = maps.Clone(s.Attrs)
+	}
+	if s.Children != nil {
+		children := make([]Span, len(s.Children))
+		for i, child := range s.Children {
+			children[i] = child.Clone()
+		}
+		s.Children = children
+	}
+	return s
+}
+
 // WithChild returns a new Span with the child appended.
 func (s Span) WithChild(child Span) Span {
 	newChildren := make([]Span, len(s.Children)+1)
