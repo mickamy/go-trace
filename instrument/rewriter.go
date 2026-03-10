@@ -66,6 +66,12 @@ func rewriteFuncs(file *ast.File) bool {
 			return false
 		}
 
+		// Rename blank identifier so the preamble can reference it.
+		if ctxParam == "_" {
+			fn.Type.Params.List[0].Names[0].Name = "__gotraceCtx"
+			ctxParam = "__gotraceCtx"
+		}
+
 		name := funcName(fn)
 		preamble := buildPreamble(ctxParam, name)
 		fn.Body.List = append(preamble, fn.Body.List...)

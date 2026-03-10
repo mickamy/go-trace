@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
 	"github.com/mickamy/go-trace/config"
 	"github.com/mickamy/go-trace/instrument"
@@ -15,6 +17,8 @@ import (
 )
 
 const version = "dev"
+
+const goTraceModule = "github.com/mickamy/go-trace"
 
 func main() {
 	showVersion := flag.Bool("version", false, "print version")
@@ -65,6 +69,11 @@ func run(pkg, configPath string) error {
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
+	// 1.5. Add go-trace runtime dependency to instrumented project
+	if err := addRuntimeDep(ctx, tmpDir); err != nil {
+		return fmt.Errorf("add runtime dep: %w", err)
+	}
+
 	// 2. Start collector
 	socketPath := filepath.Join(tmpDir, "go-trace.sock")
 	col := tracer.NewCollector(socketPath)
@@ -105,4 +114,70 @@ func run(pkg, configPath string) error {
 	<-collectorErr
 
 	return nil
+}
+
+// addRuntimeDep adds github.com/mickamy/go-trace as a dependency
+// to the instrumented project so it can import the runtime package.
+func addRuntimeDep(ctx context.Context, dir string) error {
+	editArgs := []string{"mod", "edit"}
+
+	if version == "dev" {
+		root, err := findModuleRoot()
+		if err != nil {
+			return err
+		}
+		editArgs = append(editArgs,
+			"-require="+goTraceModule+"@v0.0.0",
+			"-replace="+goTraceModule+"="+root,
+		)
+	} else {
+		v := version
+		if !strings.HasPrefix(v, "v") {
+			v = "v" + v
+		}
+		editArgs = append(editArgs,
+			"-require="+goTraceModule+"@"+v,
+		)
+	}
+
+	editCmd := exec.CommandContext(ctx, "go", editArgs...)
+	editCmd.Dir = dir
+	if out, err := editCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("go mod edit: %w\n%s", err, out)
+	}
+
+	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
+	tidyCmd.Dir = dir
+	tidyCmd.Stdout = os.Stdout
+	tidyCmd.Stderr = os.Stderr
+	if err := tidyCmd.Run(); err != nil {
+		return fmt.Errorf("go mod tidy: %w", err)
+	}
+
+	return nil
+}
+
+// findModuleRoot walks up from the working directory
+// to find the go-trace module root.
+func findModuleRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("getwd: %w", err)
+	}
+
+	for {
+		data, err := os.ReadFile(filepath.Join(dir, "go.mod")) //nolint:gosec // walking known directories
+		if err == nil && strings.Contains(string(data), "module "+goTraceModule) {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return "", errors.New(
+		"go-trace module root not found; run from within the go-trace repo in dev mode",
+	)
 }

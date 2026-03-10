@@ -103,6 +103,35 @@ func Handle(name string) {
 	}
 }
 
+func TestRewrite_BlankContextParam(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "context"
+
+func Handle(_ context.Context) {
+	println("hello")
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	result := string(got)
+	if !strings.Contains(result, "__gotraceTracer.Enter") {
+		t.Error("function with blank context param should be instrumented")
+	}
+	if !strings.Contains(result, "__gotraceCtx") {
+		t.Error("blank identifier should be renamed to __gotraceCtx")
+	}
+	if strings.Contains(result, "Enter(_,") {
+		t.Error("should not use _ as value in Enter call")
+	}
+}
+
 func TestRewrite_AlreadyInstrumented(t *testing.T) {
 	t.Parallel()
 
