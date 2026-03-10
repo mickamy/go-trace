@@ -5,11 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -218,13 +220,21 @@ func discoverViewSocket() (string, error) {
 		return "", fmt.Errorf("discover sessions: %w", err)
 	}
 
-	// Filter to sockets that actually exist and are connectable.
+	// Filter to sockets that are actually connectable.
+	// Stale sockets from unclean shutdowns are removed.
+	var d net.Dialer
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
 	var alive []string
 	for _, m := range matches {
-		info, err := os.Stat(m)
-		if err != nil || info.Mode()&os.ModeSocket == 0 {
+		conn, err := d.DialContext(ctx, "unix", m)
+		if err != nil {
+			// Stale socket — clean it up.
+			_ = os.Remove(m)
 			continue
 		}
+		_ = conn.Close()
 		alive = append(alive, m)
 	}
 
