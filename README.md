@@ -10,7 +10,7 @@ collected traces in real time.
 - **Zero-config tracing** — instruments exported functions, HTTP handlers, and SQL queries automatically
 - **AST-based rewriting** — no manual annotation or SDK integration required
 - **Real-time TUI** — browse trace trees with collapsible spans, color-coded by kind
-- **Multi-session support** — run multiple traced apps and connect viewers independently
+- **Multi-session friendly** — run multiple traced apps; `go-trace view` auto-connects when a single session is active
 - **No infrastructure** — uses Unix domain sockets for IPC, no external services needed
 
 ## Install
