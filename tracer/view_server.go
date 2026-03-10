@@ -73,6 +73,13 @@ func (s *ViewServer) Serve(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
+		// Close all active connections so clients unblock.
+		s.mu.Lock()
+		for conn := range s.conns {
+			_ = conn.Close()
+		}
+		s.conns = make(map[net.Conn]struct{})
+		s.mu.Unlock()
 	}()
 
 	for {
