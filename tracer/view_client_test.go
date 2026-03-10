@@ -43,7 +43,7 @@ func TestViewClient_ReceivesSpan(t *testing.T) {
 	}()
 
 	// Wait for client to connect.
-	time.Sleep(20 * time.Millisecond)
+	waitFor(t, func() bool { return srv.ConnCount() >= 1 })
 
 	now := time.Now()
 	want := tracer.NewSpan("s1", "t1", "Handler", tracer.SpanKindHTTP, now, now.Add(10*time.Millisecond))
@@ -102,7 +102,7 @@ func TestViewClient_MultipleSpans(t *testing.T) {
 		})
 	}()
 
-	time.Sleep(20 * time.Millisecond)
+	waitFor(t, func() bool { return srv.ConnCount() >= 1 })
 
 	now := time.Now()
 	for i := range 3 {
@@ -147,7 +147,7 @@ func TestViewClient_ServerCloses(t *testing.T) {
 		clientDone <- client.Run(ctx, func(_ string, _ tracer.Span) {})
 	}()
 
-	time.Sleep(20 * time.Millisecond)
+	waitFor(t, func() bool { return srv.ConnCount() >= 1 })
 
 	if err := srv.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -193,7 +193,7 @@ func TestViewClient_ContextCancellation(t *testing.T) {
 		clientDone <- client.Run(clientCtx, func(_ string, _ tracer.Span) {})
 	}()
 
-	time.Sleep(20 * time.Millisecond)
+	waitFor(t, func() bool { return srv.ConnCount() >= 1 })
 	clientCancel()
 
 	if err := <-clientDone; err != nil {
