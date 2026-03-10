@@ -89,10 +89,16 @@ func (c *Collector) SocketPath() string {
 	return c.socketPath
 }
 
+// maxScanTokenSize is the maximum size for a single JSON line.
+// The default bufio.Scanner limit (64 KiB) is too small for spans
+// carrying large SQL queries or attribute payloads.
+const maxScanTokenSize = 1 << 20 // 1 MiB
+
 func (c *Collector) handleConn(ctx context.Context, conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
 	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, maxScanTokenSize), maxScanTokenSize)
 	for scanner.Scan() {
 		if ctx.Err() != nil {
 			return
@@ -103,6 +109,9 @@ func (c *Collector) handleConn(ctx context.Context, conn net.Conn) {
 			continue
 		}
 		c.processEvent(ev)
+	}
+	if err := scanner.Err(); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(os.Stderr, "collector: read error: %v\n", err)
 	}
 }
 

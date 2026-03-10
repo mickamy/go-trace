@@ -34,12 +34,16 @@ func (c *ViewClient) Run(ctx context.Context, onSpan func(traceID string, span S
 	}()
 
 	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, maxScanTokenSize), maxScanTokenSize)
 	for scanner.Scan() {
 		var span Span
 		if err := json.Unmarshal(scanner.Bytes(), &span); err != nil {
 			continue
 		}
 		onSpan(span.TraceID, span)
+	}
+	if err := scanner.Err(); err != nil && ctx.Err() == nil {
+		return fmt.Errorf("read from view server: %w", err)
 	}
 
 	return nil
