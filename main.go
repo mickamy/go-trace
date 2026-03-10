@@ -59,7 +59,7 @@ func runCmd(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	configPath := fs.String("config", ".go-trace.yaml", "config file path")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: go-trace run [flags] <package>\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: go-trace run [flags] <dir>\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
 	}
@@ -70,7 +70,7 @@ func runCmd(args []string) error {
 	pkg := fs.Arg(0)
 	if pkg == "" {
 		fs.Usage()
-		return errors.New("package argument is required")
+		return errors.New("directory argument is required")
 	}
 
 	return run(pkg, *configPath)
@@ -243,7 +243,7 @@ func discoverViewSocket() (string, error) {
 
 	switch len(alive) {
 	case 0:
-		return "", errors.New("no running go-trace session found; start one with: go-trace run <package>")
+		return "", errors.New("no running go-trace session found; start one with: go-trace run <dir>")
 	case 1:
 		return alive[0], nil
 	default:
