@@ -57,8 +57,8 @@ func TestViewServer_BroadcastSingleClient(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	// Allow the server to register the connection.
-	time.Sleep(10 * time.Millisecond)
+	// Wait for the server to register the connection.
+	waitFor(t, func() bool { return srv.ConnCount() >= 1 })
 
 	now := time.Now()
 	want := tracer.NewSpan("s1", "t1", "Handler", tracer.SpanKindHTTP, now, now.Add(10*time.Millisecond))
@@ -113,7 +113,7 @@ func TestViewServer_BroadcastMultipleClients(t *testing.T) {
 	}
 	defer func() { _ = conn2.Close() }()
 
-	time.Sleep(10 * time.Millisecond)
+	waitFor(t, func() bool { return srv.ConnCount() >= 2 })
 
 	now := time.Now()
 	span := tracer.NewSpan("s1", "t1", "Handler", tracer.SpanKindHTTP, now, now.Add(time.Millisecond))
@@ -165,7 +165,7 @@ func TestViewServer_ClientDisconnect(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	waitFor(t, func() bool { return srv.ConnCount() >= 1 })
 
 	// Close client before broadcast.
 	_ = conn.Close()
