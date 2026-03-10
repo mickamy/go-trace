@@ -72,7 +72,9 @@ func (s *ViewServer) Broadcast(span Span) {
 	if err != nil {
 		return
 	}
-	line := append(data, '\n')
+	line := make([]byte, len(data)+1)
+	copy(line, data)
+	line[len(data)] = '\n'
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -99,7 +101,10 @@ func (s *ViewServer) Close() error {
 		_ = s.listener.Close()
 	}
 
-	return os.RemoveAll(s.socketPath)
+	if err := os.RemoveAll(s.socketPath); err != nil {
+		return fmt.Errorf("remove socket: %w", err)
+	}
+	return nil
 }
 
 // SocketPath returns the path of the Unix domain socket.

@@ -45,5 +45,6 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	if !rw.wroteHeader {
 		rw.wroteHeader = true
 	}
+	//nolint:wrapcheck // transparent wrapper preserves original error
 	return rw.ResponseWriter.Write(b)
 }

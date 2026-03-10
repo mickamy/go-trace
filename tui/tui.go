@@ -79,10 +79,12 @@ func (m Model) Err() error {
 	return m.err
 }
 
+// Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -116,6 +118,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// View implements tea.Model.
+func (m Model) View() string {
+	if m.width == 0 {
+		return "Initializing..."
+	}
+	if m.quitting {
+		if m.err != nil {
+			return fmt.Sprintf("error: %v\n", m.err)
+		}
+		return ""
+	}
+
+	traceBox := m.renderTracePane()
+	footer := m.renderFooter()
+	return traceBox + "\n" + footer
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -201,7 +220,8 @@ func (m Model) renderSpanRows(entry traceEntry, isCursor bool, colName int) []st
 		return []string{rootLine}
 	}
 
-	lines := []string{rootLine}
+	lines := make([]string, 1, entry.lineCount())
+	lines[0] = rootLine
 	for i, child := range entry.root.Children {
 		isLast := i == len(entry.root.Children)-1
 		lines = append(lines, m.renderChildRows(child, "    ", isLast, colName)...)
@@ -218,7 +238,8 @@ func (m Model) renderChildRows(span tracer.Span, prefix string, isLast bool, col
 	treePrefix := prefix + connector
 	line := m.formatSpanRow("  ", "  ", treePrefix, span, colName, false)
 
-	lines := []string{line}
+	lines := make([]string, 1, countSpanLines(span))
+	lines[0] = line
 	childPrefix := prefix + "│   "
 	if isLast {
 		childPrefix = prefix + "    "
@@ -258,63 +279,6 @@ func (m Model) formatSpanRow(marker, chevron, treePrefix string, span tracer.Spa
 		padLeft(t, colTime)
 }
 
-func kindColor(kind tracer.SpanKind) lipgloss.Color {
-	switch kind {
-	case tracer.SpanKindHTTP:
-		return lipgloss.Color("6") // cyan
-	case tracer.SpanKindSQL:
-		return lipgloss.Color("3") // yellow
-	case tracer.SpanKindFunction:
-		return lipgloss.Color("5") // magenta
-	default:
-		return lipgloss.Color("7")
-	}
-}
-
-func formatTime(t time.Time) string {
-	if t.IsZero() {
-		return "-"
-	}
-	return t.Local().Format("15:04:05.000") //nolint:gosmopolitan // TUI displays local time
-}
-
-func formatDuration(d time.Duration) string {
-	switch {
-	case d < time.Millisecond:
-		return fmt.Sprintf("%.0fµs", float64(d.Microseconds()))
-	case d < time.Second:
-		return fmt.Sprintf("%.1fms", float64(d.Microseconds())/1000)
-	default:
-		return fmt.Sprintf("%.2fs", d.Seconds())
-	}
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 1 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-1] + "…"
-}
-
-func padRight(s string, width int) string {
-	w := lipgloss.Width(s)
-	if w >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-w)
-}
-
-func padLeft(s string, width int) string {
-	w := lipgloss.Width(s)
-	if w >= width {
-		return s
-	}
-	return strings.Repeat(" ", width-w) + s
-}
-
 // cursorLineOffset returns the line index where the cursor's trace starts.
 func (m Model) cursorLineOffset() int {
 	offset := 0
@@ -351,31 +315,12 @@ func (m Model) maxTraceScroll() int {
 	return max(len(m.displayLines())-m.traceVisibleRows(), 0)
 }
 
-func (m Model) View() string {
-	if m.width == 0 {
-		return "Initializing..."
-	}
-	if m.quitting {
-		if m.err != nil {
-			return fmt.Sprintf("error: %v\n", m.err)
-		}
-		return ""
-	}
-
-	traceBox := m.renderTracePane()
-	footer := m.renderFooter()
-	return traceBox + "\n" + footer
-}
-
 func (m Model) renderTracePane() string {
 	innerWidth := max(m.width-4, 20)
 	visibleRows := m.traceVisibleRows()
 
 	lines := m.displayLines()
-	start := m.traceScroll
-	if start > len(lines) {
-		start = len(lines)
-	}
+	start := min(m.traceScroll, len(lines))
 	end := min(start+visibleRows, len(lines))
 	visible := lines[start:end]
 
@@ -428,6 +373,63 @@ func (m Model) renderFooter() string {
 		"q: quit",
 	}
 	return faint.Render("  " + strings.Join(items, "  "))
+}
+
+func kindColor(kind tracer.SpanKind) lipgloss.Color {
+	switch kind {
+	case tracer.SpanKindHTTP:
+		return lipgloss.Color("6") // cyan
+	case tracer.SpanKindSQL:
+		return lipgloss.Color("3") // yellow
+	case tracer.SpanKindFunction:
+		return lipgloss.Color("5") // magenta
+	default:
+		return lipgloss.Color("7")
+	}
+}
+
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Local().Format("15:04:05.000") //nolint:gosmopolitan // TUI displays local time
+}
+
+func formatDuration(d time.Duration) string {
+	switch {
+	case d < time.Millisecond:
+		return fmt.Sprintf("%.0fµs", float64(d.Microseconds()))
+	case d < time.Second:
+		return fmt.Sprintf("%.1fms", float64(d.Microseconds())/1000)
+	default:
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	}
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 1 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-1] + "…"
+}
+
+func padRight(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+func padLeft(s string, width int) string { //nolint:unparam // width varies by column
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return strings.Repeat(" ", width-w) + s
 }
 
 // Bridge connects the tracer collector to the TUI via bubbletea messages.

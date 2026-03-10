@@ -62,7 +62,7 @@ func runCmd(args []string) error {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("parse flags: %w", err)
 	}
 
 	pkg := fs.Arg(0)
@@ -132,7 +132,7 @@ func run(pkg, configPath string) error {
 	return nil
 }
 
-func startViewServer(ctx context.Context, col *tracer.Collector) (*tracer.ViewServer, error) {
+func startViewServer(ctx context.Context, col *tracer.Collector) *tracer.ViewServer {
 	sockPath := filepath.Join(os.TempDir(), fmt.Sprintf("go-trace-view-%d.sock", os.Getpid()))
 	srv := tracer.NewViewServer(sockPath)
 	col.OnSpanComplete(func(_ string, span tracer.Span) {
@@ -145,14 +145,11 @@ func startViewServer(ctx context.Context, col *tracer.Collector) (*tracer.ViewSe
 		}
 	}()
 
-	return srv, nil
+	return srv
 }
 
 func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath string) error {
-	srv, err := startViewServer(ctx, col)
-	if err != nil {
-		return err
-	}
+	srv := startViewServer(ctx, col)
 	defer func() { _ = srv.Close() }()
 
 	renderer := display.NewRenderer(os.Stderr)
@@ -160,7 +157,7 @@ func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath st
 		renderer.Add(traceID, span)
 	})
 
-	appCmd := exec.CommandContext(ctx, binPath) //nolint:gosec // running instrumented binary
+	appCmd := exec.CommandContext(ctx, binPath)
 	appCmd.Stdout = os.Stdout
 	appCmd.Stderr = os.Stderr
 	appCmd.Env = append(os.Environ(), "GOTRACE_SOCKET="+socketPath)
@@ -199,7 +196,7 @@ func viewCmd() error {
 		return fmt.Errorf("tui: %w", err)
 	}
 	if m, ok := result.(tui.Model); ok && m.Err() != nil {
-		return m.Err()
+		return fmt.Errorf("view: %w", m.Err())
 	}
 	return nil
 }
