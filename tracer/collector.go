@@ -65,7 +65,9 @@ func (c *Collector) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", c.socketPath, err)
 	}
+	c.mu.Lock()
 	c.listener = ln
+	c.mu.Unlock()
 
 	go func() {
 		<-ctx.Done()
