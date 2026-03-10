@@ -133,7 +133,8 @@ func run(pkg, configPath string) error {
 }
 
 func startViewServer(ctx context.Context, col *tracer.Collector) (*tracer.ViewServer, error) {
-	srv := tracer.NewViewServer(viewSocketPath())
+	sockPath := filepath.Join(os.TempDir(), fmt.Sprintf("go-trace-view-%d.sock", os.Getpid()))
+	srv := tracer.NewViewServer(sockPath)
 	col.OnSpanComplete(func(_ string, span tracer.Span) {
 		srv.Broadcast(span)
 	})
@@ -169,6 +170,11 @@ func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath st
 }
 
 func viewCmd() error {
+	sockPath, err := discoverViewSocket()
+	if err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -177,7 +183,7 @@ func viewCmd() error {
 
 	bridge := tui.NewBridge(p)
 
-	client := tracer.NewViewClient(viewSocketPath())
+	client := tracer.NewViewClient(sockPath)
 	go func() {
 		_ = client.Run(ctx, bridge.OnSpan)
 		p.Send(tui.AppExitMsg{})
@@ -189,8 +195,39 @@ func viewCmd() error {
 	return nil
 }
 
-func viewSocketPath() string {
-	return filepath.Join(os.TempDir(), "go-trace-view.sock")
+// discoverViewSocket finds the view server socket for the current session.
+// If exactly one session is running, it connects automatically.
+// If multiple sessions are found, it returns an error listing them.
+func discoverViewSocket() (string, error) {
+	pattern := filepath.Join(os.TempDir(), "go-trace-view-*.sock")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", fmt.Errorf("discover sessions: %w", err)
+	}
+
+	// Filter to sockets that actually exist and are connectable.
+	var alive []string
+	for _, m := range matches {
+		info, err := os.Stat(m)
+		if err != nil || info.Mode()&os.ModeSocket == 0 {
+			continue
+		}
+		alive = append(alive, m)
+	}
+
+	switch len(alive) {
+	case 0:
+		return "", errors.New("no running go-trace session found; start one with: go-trace run <package>")
+	case 1:
+		return alive[0], nil
+	default:
+		var b strings.Builder
+		b.WriteString("multiple go-trace sessions found:\n")
+		for _, s := range alive {
+			b.WriteString("  " + s + "\n")
+		}
+		return "", errors.New(b.String())
+	}
 }
 
 // addRuntimeDep adds github.com/mickamy/go-trace as a dependency
