@@ -27,14 +27,15 @@ type AppExitMsg struct{}
 
 // Model is the bubbletea model for the go-trace TUI.
 type Model struct {
-	traceView viewport.Model
-	appView   viewport.Model
-	traces    []string
-	appLines  []string
-	width     int
-	height    int
-	ready     bool
-	quitting  bool
+	traceView  viewport.Model
+	appView    viewport.Model
+	traces     []string
+	appLines   []string
+	width      int
+	height     int
+	ready      bool
+	quitting   bool
+	tracesOnly bool
 }
 
 var (
@@ -48,9 +49,14 @@ var (
 			BorderForeground(lipgloss.Color("62"))
 )
 
-// New creates a new TUI model.
+// New creates a new TUI model with two panes (traces + app output).
 func New() Model {
 	return Model{}
+}
+
+// NewTracesOnly creates a TUI model with only the traces pane.
+func NewTracesOnly() Model {
+	return Model{tracesOnly: true}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -97,6 +103,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateLayout() Model {
 	contentWidth := m.width - 2 // border
+
+	if m.tracesOnly {
+		traceHeight := m.height - 4
+		if traceHeight < 3 {
+			traceHeight = 3
+		}
+		m.traceView = viewport.New(contentWidth, traceHeight)
+		m.traceView.SetContent(strings.Join(m.traces, "\n"))
+		return m
+	}
+
 	traceHeight := m.height*2/3 - 3
 	appHeight := m.height - traceHeight - 5
 
@@ -125,20 +142,24 @@ func (m Model) View() string {
 	}
 
 	traceTitle := titleStyle.Render("Traces")
-	appTitle := titleStyle.Render("App Output")
 
 	traceBox := borderStyle.
 		Width(m.width - 2).
 		Render(traceTitle + "\n" + m.traceView.View())
 
-	appBox := borderStyle.
-		Width(m.width - 2).
-		Render(appTitle + "\n" + m.appView.View())
-
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		PaddingLeft(2).
 		Render("q: quit")
+
+	if m.tracesOnly {
+		return traceBox + "\n" + help
+	}
+
+	appTitle := titleStyle.Render("App Output")
+	appBox := borderStyle.
+		Width(m.width - 2).
+		Render(appTitle + "\n" + m.appView.View())
 
 	return traceBox + "\n" + appBox + "\n" + help
 }

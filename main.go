@@ -208,7 +208,7 @@ func viewCmd() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	model := gotui.New()
+	model := gotui.NewTracesOnly()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	bridge := gotui.NewBridge(p)
