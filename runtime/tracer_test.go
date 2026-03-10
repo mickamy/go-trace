@@ -21,6 +21,8 @@ func (r *recordingSender) Send(ev tracer.Event) {
 	r.events = append(r.events, ev)
 }
 
+func (r *recordingSender) Close() error { return nil }
+
 func (r *recordingSender) Events() []tracer.Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -34,7 +34,15 @@ func GlobalTracer() *Tracer {
 	return globalTracer
 }
 
+// Shutdown stops the global tracer and closes its sender connection.
+func Shutdown() {
+	if globalTracer != nil {
+		globalTracer.Shutdown()
+	}
+}
+
 // noopSender discards all events.
 type noopSender struct{}
 
 func (noopSender) Send(_ tracer.Event) {}
+func (noopSender) Close() error        { return nil }

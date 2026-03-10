@@ -72,6 +72,15 @@ func (t *Tracer) Enter(ctx context.Context, name string, kind tracer.SpanKind) (
 	}
 }
 
+// Shutdown stops the tracer and closes the underlying sender connection.
+func (t *Tracer) Shutdown() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.stopped = true
+	_ = t.sender.Close()
+}
+
 // Stop prevents further events from being sent.
 func (t *Tracer) Stop() {
 	t.mu.Lock()

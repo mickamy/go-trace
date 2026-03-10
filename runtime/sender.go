@@ -13,6 +13,7 @@ import (
 // Sender abstracts how events are delivered to the collector.
 type Sender interface {
 	Send(ev tracer.Event)
+	Close() error
 }
 
 // SocketSender sends events as JSON lines over a Unix domain socket.
@@ -41,10 +42,13 @@ func (s *SocketSender) Send(ev tracer.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	fmt.Fprintf(s.conn, "%s\n", data)
+	_, _ = fmt.Fprintf(s.conn, "%s\n", data)
 }
 
 // Close closes the underlying connection.
 func (s *SocketSender) Close() error {
-	return fmt.Errorf("close socket sender: %w", s.conn.Close())
+	if err := s.conn.Close(); err != nil {
+		return fmt.Errorf("close socket sender: %w", err)
+	}
+	return nil
 }
