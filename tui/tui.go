@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -14,7 +15,7 @@ import (
 
 // TraceMsg is sent when a complete trace tree is ready.
 type TraceMsg struct {
-	Tree string
+	Root tracer.Span
 }
 
 // AppOutputMsg is sent when the app writes to stdout/stderr.
@@ -25,22 +26,33 @@ type AppOutputMsg struct {
 // AppExitMsg is sent when the instrumented app exits.
 type AppExitMsg struct{}
 
+// Column widths.
+const (
+	colMarker   = 4  // "▶ " + "▾ "
+	colKind     = 10 // "function" + padding
+	colDuration = 12
+)
+
 // traceEntry holds a single trace tree with collapse state.
 type traceEntry struct {
-	summary   string // first line (root span)
-	children  string // remaining lines (child spans)
+	root      tracer.Span
 	collapsed bool
 }
 
-// lines returns the visible lines for this entry.
-func (e traceEntry) lines() []string {
+// lineCount returns the number of display lines for this entry.
+func (e traceEntry) lineCount() int {
 	if e.collapsed {
-		return []string{e.summary}
+		return 1
 	}
-	if e.children == "" {
-		return []string{e.summary}
+	return countSpanLines(e.root)
+}
+
+func countSpanLines(span tracer.Span) int {
+	n := 1
+	for _, child := range span.Children {
+		n += countSpanLines(child)
 	}
-	return append([]string{e.summary}, strings.Split(e.children, "\n")...)
+	return n
 }
 
 // Model is the bubbletea model for the go-trace TUI.
@@ -83,8 +95,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case TraceMsg:
-		entry := parseTraceEntry(msg.Tree)
-		entry.collapsed = entry.children != ""
+		entry := traceEntry{
+			root:      msg.Root,
+			collapsed: len(msg.Root.Children) > 0,
+		}
 		m.traces = append(m.traces, entry)
 		if m.follow {
 			m.cursor = len(m.traces) - 1
@@ -105,15 +119,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
-}
-
-func parseTraceEntry(tree string) traceEntry {
-	lines := strings.SplitN(strings.TrimRight(tree, "\n"), "\n", 2)
-	entry := traceEntry{summary: lines[0]}
-	if len(lines) > 1 {
-		entry.children = lines[1]
-	}
-	return entry
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -158,45 +163,149 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// displayLines builds all visible lines from traces with cursor/chevron markers.
+// displayLines builds all visible lines with cursor/chevron and columns.
 func (m Model) displayLines() []string {
+	innerWidth := max(m.width-4, 20)
+	colName := max(innerWidth-colMarker-colKind-colDuration-2, 10) // 2 = gaps
+
 	var out []string
 	for i, entry := range m.traces {
 		isCursor := i == m.cursor
-		marker := "  "
-		if isCursor {
-			marker = "▶ "
-		}
-
-		hasChildren := entry.children != ""
-		chevron := "  "
-		if hasChildren {
-			chevron = "▾ "
-			if entry.collapsed {
-				chevron = "▸ "
-			}
-		}
-
-		summaryLine := marker + chevron + entry.summary
-		if isCursor {
-			summaryLine = lipgloss.NewStyle().Bold(true).Render(summaryLine)
-		}
-		out = append(out, summaryLine)
-
-		if !entry.collapsed && hasChildren {
-			for _, child := range strings.Split(entry.children, "\n") {
-				out = append(out, "    "+child)
-			}
-		}
+		lines := m.renderSpanRows(entry, isCursor, colName)
+		out = append(out, lines...)
 	}
 	return out
+}
+
+func (m Model) renderSpanRows(entry traceEntry, isCursor bool, colName int) []string {
+	marker := "  "
+	if isCursor {
+		marker = "▶ "
+	}
+
+	hasChildren := len(entry.root.Children) > 0
+	chevron := "  "
+	if hasChildren {
+		chevron = "▾ "
+		if entry.collapsed {
+			chevron = "▸ "
+		}
+	}
+
+	rootLine := m.formatSpanRow(marker, chevron, "", entry.root, colName, isCursor)
+	if entry.collapsed {
+		return []string{rootLine}
+	}
+
+	lines := []string{rootLine}
+	for i, child := range entry.root.Children {
+		isLast := i == len(entry.root.Children)-1
+		lines = append(lines, m.renderChildRows(child, "    ", isLast, colName)...)
+	}
+	return lines
+}
+
+func (m Model) renderChildRows(span tracer.Span, prefix string, isLast bool, colName int) []string {
+	connector := "├── "
+	if isLast {
+		connector = "└── "
+	}
+
+	treePrefix := prefix + connector
+	line := m.formatSpanRow("  ", "  ", treePrefix, span, colName, false)
+
+	lines := []string{line}
+	childPrefix := prefix + "│   "
+	if isLast {
+		childPrefix = prefix + "    "
+	}
+	for i, child := range span.Children {
+		childIsLast := i == len(span.Children)-1
+		lines = append(lines, m.renderChildRows(child, childPrefix, childIsLast, colName)...)
+	}
+	return lines
+}
+
+func (m Model) formatSpanRow(marker, chevron, treePrefix string, span tracer.Span, colName int, bold bool) string {
+	name := treePrefix + span.Name
+	name = truncate(name, colName)
+
+	kind := span.Kind.String()
+	dur := formatDuration(span.Duration())
+
+	kindStyled := lipgloss.NewStyle().
+		Foreground(kindColor(span.Kind)).
+		Render(kind)
+
+	if bold {
+		boldStyle := lipgloss.NewStyle().Bold(true)
+		return boldStyle.Render(marker+chevron) +
+			padRight(boldStyle.Render(name), colName) + " " +
+			padRight(kindStyled, colKind) + " " +
+			padLeft(boldStyle.Render(dur), colDuration)
+	}
+
+	return marker + chevron +
+		padRight(name, colName) + " " +
+		padRight(kindStyled, colKind) + " " +
+		padLeft(dur, colDuration)
+}
+
+func kindColor(kind tracer.SpanKind) lipgloss.Color {
+	switch kind {
+	case tracer.SpanKindHTTP:
+		return lipgloss.Color("6") // cyan
+	case tracer.SpanKindSQL:
+		return lipgloss.Color("3") // yellow
+	case tracer.SpanKindFunction:
+		return lipgloss.Color("5") // magenta
+	default:
+		return lipgloss.Color("7")
+	}
+}
+
+func formatDuration(d time.Duration) string {
+	switch {
+	case d < time.Millisecond:
+		return fmt.Sprintf("%.0fµs", float64(d.Microseconds()))
+	case d < time.Second:
+		return fmt.Sprintf("%.1fms", float64(d.Microseconds())/1000)
+	default:
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	}
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 1 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-1] + "…"
+}
+
+func padRight(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+func padLeft(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return strings.Repeat(" ", width-w) + s
 }
 
 // cursorLineOffset returns the line index where the cursor's trace starts.
 func (m Model) cursorLineOffset() int {
 	offset := 0
 	for i := 0; i < m.cursor && i < len(m.traces); i++ {
-		offset += len(m.traces[i].lines())
+		offset += m.traces[i].lineCount()
 	}
 	return offset
 }
@@ -357,7 +466,7 @@ func NewBridge(p *tea.Program) *Bridge {
 }
 
 // OnSpan handles a completed span. When the root arrives,
-// formats the tree and sends it to the TUI.
+// builds the tree and sends it to the TUI.
 func (b *Bridge) OnSpan(traceID string, span tracer.Span) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -365,9 +474,9 @@ func (b *Bridge) OnSpan(traceID string, span tracer.Span) {
 	b.traces[traceID] = append(b.traces[traceID], span)
 
 	if span.ParentID == "" {
-		tree := display.FormatTree(b.traces[traceID])
+		root := display.BuildTree(b.traces[traceID])
 		delete(b.traces, traceID)
-		b.program.Send(TraceMsg{Tree: tree})
+		b.program.Send(TraceMsg{Root: root})
 	}
 }
 
