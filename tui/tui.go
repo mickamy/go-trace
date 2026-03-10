@@ -84,6 +84,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TraceMsg:
 		entry := parseTraceEntry(msg.Tree)
+		entry.collapsed = entry.children != ""
 		m.traces = append(m.traces, entry)
 		if m.follow {
 			m.cursor = len(m.traces) - 1
