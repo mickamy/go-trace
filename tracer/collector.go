@@ -118,16 +118,28 @@ func (c *Collector) handleConn(ctx context.Context, conn net.Conn) {
 }
 
 func (c *Collector) processEvent(ev Event) {
+	span, handlers := c.processEventLocked(ev)
+	if handlers == nil {
+		return
+	}
+
+	for _, fn := range handlers {
+		fn(span.TraceID, span)
+	}
+}
+
+func (c *Collector) processEventLocked(ev Event) (Span, []func(string, Span)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	switch ev.Type {
 	case EventSpanStart:
 		c.pending[ev.SpanID] = ev
+		return Span{}, nil
 	case EventSpanEnd:
 		start, ok := c.pending[ev.SpanID]
 		if !ok {
-			return
+			return Span{}, nil
 		}
 		delete(c.pending, ev.SpanID)
 
@@ -141,8 +153,11 @@ func (c *Collector) processEvent(ev Event) {
 
 		c.traces[span.TraceID] = append(c.traces[span.TraceID], span)
 
-		for _, fn := range c.handlers {
-			fn(span.TraceID, span)
-		}
+		// Copy handlers to invoke outside the lock.
+		handlers := make([]func(string, Span), len(c.handlers))
+		copy(handlers, c.handlers)
+		return span, handlers
 	}
+
+	return Span{}, nil
 }
