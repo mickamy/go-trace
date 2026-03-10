@@ -248,6 +248,35 @@ func setup() {
 	if strings.Contains(result, "sql.Open") {
 		t.Error("sql.Open should be replaced")
 	}
+	if strings.Contains(result, `"database/sql"`) {
+		t.Error("unused database/sql import should be removed")
+	}
+}
+
+func TestRewrite_SQLOpen_PreservesImportWhenStillUsed(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "database/sql"
+
+func setup() {
+	db, err := sql.Open("postgres", "host=localhost")
+	_ = db
+	_ = err
+	_ = sql.ErrNoRows
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	result := string(got)
+	if !strings.Contains(result, `"database/sql"`) {
+		t.Error("database/sql import should be preserved when sql is still referenced")
+	}
 }
 
 func TestRewrite_SQLOpen_AlreadyRewritten(t *testing.T) {

@@ -32,6 +32,10 @@ func Rewrite(src []byte) ([]byte, error) {
 		return src, nil
 	}
 
+	if sqlMod {
+		removeUnusedImport(file, "sql", "database/sql")
+	}
+
 	addImport(file)
 
 	var buf bytes.Buffer
@@ -321,6 +325,60 @@ func buildPreamble(ctxParam, name string) []ast.Stmt {
 	}
 
 	return []ast.Stmt{varDecl, assign, deferStmt}
+}
+
+// removeUnusedImport removes an import if the given identifier is no longer
+// referenced anywhere in the file's AST (outside of import declarations).
+func removeUnusedImport(file *ast.File, ident, importPath string) {
+	quotedPath := fmt.Sprintf("%q", importPath)
+
+	// Check if the identifier is still used in non-import nodes.
+	used := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if used {
+			return false
+		}
+		// Skip import declarations.
+		if genDecl, ok := n.(*ast.GenDecl); ok && genDecl.Tok == token.IMPORT {
+			return false
+		}
+		id, ok := n.(*ast.Ident)
+		if ok && id.Name == ident {
+			used = true
+		}
+		return !used
+	})
+
+	if used {
+		return
+	}
+
+	// Remove the import spec.
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.IMPORT {
+			continue
+		}
+		specs := make([]ast.Spec, 0, len(genDecl.Specs))
+		for _, spec := range genDecl.Specs {
+			imp, ok := spec.(*ast.ImportSpec)
+			if ok && imp.Path.Value == quotedPath {
+				continue
+			}
+			specs = append(specs, spec)
+		}
+		genDecl.Specs = specs
+	}
+
+	// Also update file.Imports.
+	imports := make([]*ast.ImportSpec, 0, len(file.Imports))
+	for _, imp := range file.Imports {
+		if imp.Path.Value == quotedPath {
+			continue
+		}
+		imports = append(imports, imp)
+	}
+	file.Imports = imports
 }
 
 // addImport ensures the runtime import is present.
