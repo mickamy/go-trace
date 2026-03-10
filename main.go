@@ -140,7 +140,9 @@ func startViewServer(ctx context.Context, col *tracer.Collector) (*tracer.ViewSe
 	})
 
 	go func() {
-		_ = srv.Start(ctx)
+		if err := srv.Start(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "view server: %v\n", err)
+		}
 	}()
 
 	return srv, nil
@@ -185,12 +187,19 @@ func viewCmd() error {
 
 	client := tracer.NewViewClient(sockPath)
 	go func() {
-		_ = client.Run(ctx, bridge.OnSpan)
+		if err := client.Run(ctx, bridge.OnSpan); err != nil {
+			p.Send(tui.ErrorMsg{Err: fmt.Errorf("view client: %w", err)})
+			return
+		}
 		p.Send(tui.AppExitMsg{})
 	}()
 
-	if _, err := p.Run(); err != nil {
+	result, err := p.Run()
+	if err != nil {
 		return fmt.Errorf("tui: %w", err)
+	}
+	if m, ok := result.(tui.Model); ok && m.Err() != nil {
+		return m.Err()
 	}
 	return nil
 }

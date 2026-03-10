@@ -21,6 +21,11 @@ type TraceMsg struct {
 // AppExitMsg is sent when the trace source disconnects.
 type AppExitMsg struct{}
 
+// ErrorMsg is sent when the view client encounters an error.
+type ErrorMsg struct {
+	Err error
+}
+
 // Column widths.
 const (
 	colMarker   = 4  // "▶ " + "▾ "
@@ -59,6 +64,7 @@ type Model struct {
 	height   int
 	quitting bool
 	follow   bool
+	err      error
 
 	traceScroll int
 }
@@ -66,6 +72,11 @@ type Model struct {
 // New creates a new TUI model.
 func New() Model {
 	return Model{follow: true}
+}
+
+// Err returns the error that caused the TUI to exit, if any.
+func (m Model) Err() error {
+	return m.err
 }
 
 func (m Model) Init() tea.Cmd {
@@ -93,6 +104,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.traceScroll = m.maxTraceScroll()
 		}
 		return m, nil
+
+	case ErrorMsg:
+		m.err = msg.Err
+		m.quitting = true
+		return m, tea.Quit
 
 	case AppExitMsg:
 		m.quitting = true
@@ -340,6 +356,9 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 	if m.quitting {
+		if m.err != nil {
+			return fmt.Sprintf("error: %v\n", m.err)
+		}
 		return ""
 	}
 
