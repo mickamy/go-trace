@@ -279,9 +279,10 @@ func (m Model) formatSpanRow(marker, chevron, treePrefix string, span tracer.Spa
 		padLeft(t, colTime)
 }
 
-// cursorLineOffset returns the line index where the cursor's trace starts.
+// cursorLineOffset returns the line index where the cursor's trace starts,
+// including the header row.
 func (m Model) cursorLineOffset() int {
-	offset := 0
+	offset := 1 // header row
 	for i := 0; i < m.cursor && i < len(m.traces); i++ {
 		offset += m.traces[i].lineCount()
 	}
