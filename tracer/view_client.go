@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 )
 
 // ViewClient connects to a ViewServer and receives completed spans.
@@ -28,9 +29,10 @@ func (c *ViewClient) Run(ctx context.Context, onSpan func(traceID string, span S
 	}
 	defer func() { _ = conn.Close() }()
 
+	// When context is cancelled, set a past deadline to unblock the scanner.
 	go func() {
 		<-ctx.Done()
-		_ = conn.Close()
+		_ = conn.SetDeadline(time.Now())
 	}()
 
 	scanner := bufio.NewScanner(conn)

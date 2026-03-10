@@ -106,9 +106,17 @@ func run(pkg, configPath string) error {
 	socketPath := filepath.Join(tmpDir, "go-trace.sock")
 	col := tracer.NewCollector(socketPath)
 
+	if err := col.Listen(ctx); err != nil {
+		return fmt.Errorf("collector listen: %w", err)
+	}
+
 	collectorErr := make(chan error, 1)
 	go func() {
-		collectorErr <- col.Start(ctx)
+		collectorErr <- col.Serve(ctx)
+	}()
+	defer func() {
+		stop()
+		<-collectorErr
 	}()
 
 	// 3. Build instrumented binary
@@ -124,14 +132,7 @@ func run(pkg, configPath string) error {
 	}
 
 	// 4. Run instrumented binary
-	if err := runPlain(ctx, col, binPath, socketPath); err != nil {
-		return err
-	}
-
-	stop()
-	<-collectorErr
-
-	return nil
+	return runPlain(ctx, col, binPath, socketPath)
 }
 
 func startViewServer(ctx context.Context, col *tracer.Collector) (*tracer.ViewServer, error) {

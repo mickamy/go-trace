@@ -47,6 +47,9 @@ func (s *SocketSender) Send(ev tracer.Event) {
 
 // Close closes the underlying connection.
 func (s *SocketSender) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if err := s.conn.Close(); err != nil {
 		return fmt.Errorf("close socket sender: %w", err)
 	}

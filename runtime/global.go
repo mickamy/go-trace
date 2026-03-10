@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	globalMu     sync.Mutex
 	globalOnce   sync.Once
 	globalTracer *Tracer
 )
@@ -19,25 +20,39 @@ var (
 // code can run safely without go-trace.
 func GlobalTracer() *Tracer {
 	globalOnce.Do(func() {
+		var t *Tracer
+
 		socketPath := os.Getenv("GOTRACE_SOCKET")
 		if socketPath == "" {
-			globalTracer = NewTracer(noopSender{})
-			return
+			t = NewTracer(noopSender{})
+		} else {
+			sender, err := NewSocketSender(context.Background(), socketPath)
+			if err != nil {
+				t = NewTracer(noopSender{})
+			} else {
+				t = NewTracer(sender)
+			}
 		}
-		sender, err := NewSocketSender(context.Background(), socketPath)
-		if err != nil {
-			globalTracer = NewTracer(noopSender{})
-			return
-		}
-		globalTracer = NewTracer(sender)
+
+		globalMu.Lock()
+		globalTracer = t
+		globalMu.Unlock()
 	})
+
+	globalMu.Lock()
+	defer globalMu.Unlock()
 	return globalTracer
 }
 
 // Shutdown stops the global tracer and closes its sender connection.
+// Safe to call concurrently with GlobalTracer.
 func Shutdown() {
-	if globalTracer != nil {
-		globalTracer.Shutdown()
+	globalMu.Lock()
+	t := globalTracer
+	globalMu.Unlock()
+
+	if t != nil {
+		t.Shutdown()
 	}
 }
 

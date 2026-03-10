@@ -56,8 +56,18 @@ func (c *Collector) Traces() map[string][]Span {
 	return out
 }
 
-// Start begins listening for events. It blocks until the context is cancelled.
+// Start binds the socket and begins accepting connections.
+// It blocks until the context is cancelled.
 func (c *Collector) Start(ctx context.Context) error {
+	if err := c.Listen(ctx); err != nil {
+		return err
+	}
+	return c.Serve(ctx)
+}
+
+// Listen creates the Unix domain socket. Call Serve afterwards
+// to begin accepting connections.
+func (c *Collector) Listen(ctx context.Context) error {
 	if err := os.RemoveAll(c.socketPath); err != nil {
 		return fmt.Errorf("remove existing socket: %w", err)
 	}
@@ -70,6 +80,20 @@ func (c *Collector) Start(ctx context.Context) error {
 	c.mu.Lock()
 	c.listener = ln
 	c.mu.Unlock()
+
+	return nil
+}
+
+// Serve accepts connections on the already-bound listener.
+// It blocks until the context is cancelled or the listener is closed.
+func (c *Collector) Serve(ctx context.Context) error {
+	c.mu.Lock()
+	ln := c.listener
+	c.mu.Unlock()
+
+	if ln == nil {
+		return errors.New("listener not initialized; call Listen first")
+	}
 
 	go func() {
 		<-ctx.Done()
