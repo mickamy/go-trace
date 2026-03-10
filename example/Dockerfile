@@ -12,4 +12,4 @@ COPY . .
 RUN go build -o /usr/local/bin/go-trace .
 
 # go-trace instruments, builds, and runs the example app
-CMD ["go-trace", "./example"]
+CMD ["go-trace", "run", "./example"]
