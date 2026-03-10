@@ -16,7 +16,7 @@ func tempSocketPath(t *testing.T) string {
 	t.Helper()
 	// Use /tmp directly to avoid macOS 104-byte Unix socket path limit.
 	// t.TempDir() produces paths too long for Unix sockets.
-	f, err := os.CreateTemp("", "gt-*.sock") //nolint:usetesting // t.TempDir() path exceeds Unix socket limit
+	f, err := os.CreateTemp("/tmp", "gt-*.sock")
 	if err != nil {
 		t.Fatalf("create temp socket: %v", err)
 	}
