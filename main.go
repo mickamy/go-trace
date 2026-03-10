@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mickamy/go-trace/config"
+	"github.com/mickamy/go-trace/display"
 	"github.com/mickamy/go-trace/instrument"
 	"github.com/mickamy/go-trace/tracer"
 )
@@ -78,9 +79,9 @@ func run(pkg, configPath string) error {
 	socketPath := filepath.Join(tmpDir, "go-trace.sock")
 	col := tracer.NewCollector(socketPath)
 
-	col.OnSpanComplete(func(_ string, span tracer.Span) {
-		// Temporary stdout output until TUI is implemented.
-		fmt.Printf("[%s] %s %s (%v)\n", span.Kind, span.Name, span.ID, span.Duration())
+	renderer := display.NewRenderer(os.Stdout)
+	col.OnSpanComplete(func(traceID string, span tracer.Span) {
+		renderer.Add(traceID, span)
 	})
 
 	collectorErr := make(chan error, 1)
