@@ -76,14 +76,30 @@ func (s *ViewServer) Broadcast(span Span) {
 	copy(line, data)
 	line[len(data)] = '\n'
 
+	// Snapshot connections under the lock.
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	snapshot := make([]net.Conn, 0, len(s.conns))
 	for conn := range s.conns {
+		snapshot = append(snapshot, conn)
+	}
+	s.mu.Unlock()
+
+	// Write outside the lock so a slow client doesn't block others.
+	var failed []net.Conn
+	for _, conn := range snapshot {
 		if _, err := conn.Write(line); err != nil {
 			_ = conn.Close()
+			failed = append(failed, conn)
+		}
+	}
+
+	// Remove failed connections.
+	if len(failed) > 0 {
+		s.mu.Lock()
+		for _, conn := range failed {
 			delete(s.conns, conn)
 		}
+		s.mu.Unlock()
 	}
 }
 
