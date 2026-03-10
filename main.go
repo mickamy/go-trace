@@ -223,13 +223,15 @@ func discoverViewSocket() (string, error) {
 
 	// Filter to sockets that are actually connectable.
 	// Stale sockets from unclean shutdowns are removed.
+	// Each socket gets its own timeout so a slow dial doesn't
+	// consume the budget for subsequent candidates.
 	var d net.Dialer
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
 
 	var alive []string
 	for _, m := range matches {
-		conn, err := d.DialContext(ctx, "unix", m)
+		dialCtx, dialCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		conn, err := d.DialContext(dialCtx, "unix", m)
+		dialCancel()
 		if err != nil {
 			// Stale socket — clean it up.
 			_ = os.Remove(m)
