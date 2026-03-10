@@ -45,9 +45,5 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	if !rw.wroteHeader {
 		rw.wroteHeader = true
 	}
-	n, err := rw.ResponseWriter.Write(b)
-	if err != nil {
-		return n, fmt.Errorf("write response: %w", err)
-	}
-	return n, nil
+	return rw.ResponseWriter.Write(b)
 }
