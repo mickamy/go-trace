@@ -29,10 +29,17 @@ func (c *ViewClient) Run(ctx context.Context, onSpan func(traceID string, span S
 	}
 	defer func() { _ = conn.Close() }()
 
-	// When context is cancelled, set a past deadline to unblock the scanner.
+	// When context is cancelled or Run returns, set a past deadline
+	// to unblock the scanner. The done channel prevents the goroutine
+	// from leaking when Run returns before ctx is cancelled.
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		<-ctx.Done()
-		_ = conn.SetDeadline(time.Now())
+		select {
+		case <-ctx.Done():
+			_ = conn.SetDeadline(time.Now())
+		case <-done:
+		}
 	}()
 
 	scanner := bufio.NewScanner(conn)
