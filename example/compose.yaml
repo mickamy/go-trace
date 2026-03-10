@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: example
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: pg_isready -U postgres
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: example/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/example?sslmode=disable
+
+  client:
+    image: curlimages/curl:latest
+    depends_on:
+      - app
+    entrypoint: sh
+    command:
+      - -c
+      - |
+        until curl -sf http://app:8080/hello/world >/dev/null 2>&1; do
+          echo "waiting for app..."
+          sleep 1
+        done
+        echo "app is ready!"
+        while true; do
+          curl -s http://app:8080/hello/world
+          echo ""
+          curl -s http://app:8080/users
+          echo ""
+          curl -s http://app:8080/slow
+          echo ""
+          sleep 5
+        done

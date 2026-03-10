@@ -1,0 +1,192 @@
+package tracer
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"sync"
+	"time"
+)
+
+// Collector receives trace events over a Unix domain socket
+// and assembles them into complete Span trees.
+type Collector struct {
+	socketPath string
+	listener   net.Listener
+
+	mu       sync.Mutex
+	pending  map[string]Event  // spanID -> start event
+	traces   map[string][]Span // traceID -> root spans
+	handlers []func(traceID string, span Span)
+}
+
+// NewCollector creates a collector that listens on the given Unix socket path.
+func NewCollector(socketPath string) *Collector {
+	return &Collector{
+		socketPath: socketPath,
+		pending:    make(map[string]Event),
+		traces:     make(map[string][]Span),
+	}
+}
+
+// OnSpanComplete registers a callback invoked when a span is completed.
+func (c *Collector) OnSpanComplete(fn func(traceID string, span Span)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.handlers = append(c.handlers, fn)
+}
+
+// Traces returns a snapshot of all completed root spans grouped by trace ID.
+func (c *Collector) Traces() map[string][]Span {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	out := make(map[string][]Span, len(c.traces))
+	for k, v := range c.traces {
+		copied := make([]Span, len(v))
+		for i, span := range v {
+			copied[i] = span.Clone()
+		}
+		out[k] = copied
+	}
+	return out
+}
+
+// Start binds the socket and begins accepting connections.
+// It blocks until the context is cancelled.
+func (c *Collector) Start(ctx context.Context) error {
+	if err := c.Listen(ctx); err != nil {
+		return err
+	}
+	return c.Serve(ctx)
+}
+
+// Listen creates the Unix domain socket. Call Serve afterwards
+// to begin accepting connections.
+func (c *Collector) Listen(ctx context.Context) error {
+	if err := os.RemoveAll(c.socketPath); err != nil {
+		return fmt.Errorf("remove existing socket: %w", err)
+	}
+
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "unix", c.socketPath)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", c.socketPath, err)
+	}
+	c.mu.Lock()
+	c.listener = ln
+	c.mu.Unlock()
+
+	return nil
+}
+
+// Serve accepts connections on the already-bound listener.
+// It blocks until the context is cancelled or the listener is closed.
+func (c *Collector) Serve(ctx context.Context) error {
+	c.mu.Lock()
+	ln := c.listener
+	c.mu.Unlock()
+
+	if ln == nil {
+		return errors.New("listener not initialized; call Listen first")
+	}
+
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return nil //nolint:nilerr // expected during graceful shutdown
+			}
+			return fmt.Errorf("accept: %w", err)
+		}
+		go c.handleConn(ctx, conn)
+	}
+}
+
+// SocketPath returns the path of the Unix domain socket.
+func (c *Collector) SocketPath() string {
+	return c.socketPath
+}
+
+// maxScanTokenSize is the maximum size for a single JSON line.
+// The default bufio.Scanner limit (64 KiB) is too small for spans
+// carrying large SQL queries or attribute payloads.
+const maxScanTokenSize = 1 << 20 // 1 MiB
+
+func (c *Collector) handleConn(ctx context.Context, conn net.Conn) {
+	defer func() { _ = conn.Close() }()
+
+	// When context is cancelled, set a past deadline to unblock the scanner.
+	go func() {
+		<-ctx.Done()
+		_ = conn.SetDeadline(time.Now())
+	}()
+
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, maxScanTokenSize), maxScanTokenSize)
+	for scanner.Scan() {
+		var ev Event
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			continue
+		}
+		c.processEvent(ev)
+	}
+	if err := scanner.Err(); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(os.Stderr, "collector: read error: %v\n", err)
+	}
+}
+
+func (c *Collector) processEvent(ev Event) {
+	span, handlers := c.processEventLocked(ev)
+	if handlers == nil {
+		return
+	}
+
+	for _, fn := range handlers {
+		fn(span.TraceID, span)
+	}
+}
+
+func (c *Collector) processEventLocked(ev Event) (Span, []func(string, Span)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	switch ev.Type {
+	case EventSpanStart:
+		c.pending[ev.SpanID] = ev
+		return Span{}, nil
+	case EventSpanEnd:
+		start, ok := c.pending[ev.SpanID]
+		if !ok {
+			return Span{}, nil
+		}
+		delete(c.pending, ev.SpanID)
+
+		span := NewSpan(start.SpanID, start.TraceID, start.Name, start.Kind, start.Time, ev.Time)
+		if start.ParentID != "" {
+			span = span.WithParentID(start.ParentID)
+		}
+		for k, v := range ev.Attrs {
+			span = span.WithAttr(k, v)
+		}
+
+		c.traces[span.TraceID] = append(c.traces[span.TraceID], span)
+
+		// Copy handlers to invoke outside the lock.
+		handlers := make([]func(string, Span), len(c.handlers))
+		copy(handlers, c.handlers)
+		return span, handlers
+	}
+
+	return Span{}, nil
+}
