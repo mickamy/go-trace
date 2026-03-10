@@ -29,21 +29,26 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage: go-trace <command> [flags]\n\n")
 		fmt.Fprintf(os.Stderr, "Commands:\n")
 		fmt.Fprintf(os.Stderr, "  run      Instrument, build, and run a Go package\n")
+		fmt.Fprintf(os.Stderr, "  view     Connect to a running session and display traces in TUI\n")
 		fmt.Fprintf(os.Stderr, "  version  Print version\n")
 	}
 	flag.Parse()
 
 	cmd := flag.Arg(0)
+	var err error
 	switch cmd {
 	case "run":
-		if err := runCmd(flag.Args()[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		err = runCmd(flag.Args()[1:])
+	case "view":
+		err = viewCmd()
 	case "version":
 		fmt.Println("go-trace", version)
 	default:
 		flag.Usage()
+		os.Exit(1)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -133,7 +138,26 @@ func run(pkg, configPath string, useTUI bool) error {
 	return nil
 }
 
+func startViewServer(ctx context.Context, col *tracer.Collector) (*tracer.ViewServer, error) {
+	srv := tracer.NewViewServer(viewSocketPath())
+	col.OnSpanComplete(func(_ string, span tracer.Span) {
+		srv.Broadcast(span)
+	})
+
+	go func() {
+		_ = srv.Start(ctx)
+	}()
+
+	return srv, nil
+}
+
 func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath string) error {
+	srv, err := startViewServer(ctx, col)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = srv.Close() }()
+
 	renderer := display.NewRenderer(os.Stderr)
 	col.OnSpanComplete(func(traceID string, span tracer.Span) {
 		renderer.Add(traceID, span)
@@ -151,6 +175,12 @@ func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath st
 }
 
 func runWithTUI(ctx context.Context, col *tracer.Collector, binPath, socketPath string) error {
+	srv, err := startViewServer(ctx, col)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = srv.Close() }()
+
 	model := gotui.New()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
@@ -172,6 +202,36 @@ func runWithTUI(ctx context.Context, col *tracer.Collector, binPath, socketPath 
 		return fmt.Errorf("tui: %w", err)
 	}
 	return nil
+}
+
+func viewCmd() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	model := gotui.New()
+	p := tea.NewProgram(model, tea.WithAltScreen())
+
+	bridge := gotui.NewBridge(p)
+
+	client := tracer.NewViewClient(viewSocketPath())
+	go func() {
+		err := client.Run(ctx, bridge.OnSpan)
+		if err != nil {
+			p.Send(gotui.AppOutputMsg{
+				Line: "connection error: " + err.Error(),
+			})
+		}
+		p.Send(gotui.AppExitMsg{})
+	}()
+
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("tui: %w", err)
+	}
+	return nil
+}
+
+func viewSocketPath() string {
+	return filepath.Join(os.TempDir(), "go-trace-view.sock")
 }
 
 // addRuntimeDep adds github.com/mickamy/go-trace as a dependency
