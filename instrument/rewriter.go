@@ -265,15 +265,34 @@ func hasTracerCall(fn *ast.FuncDecl) bool {
 
 // buildPreamble creates the AST statements for:
 //
-//	ctx, __gotraceFinish := __gotraceTracer.Enter(ctx, "Name", gotraceruntime.SpanKindFunction)
+//	var __gotraceFinish gotraceruntime.FinishFunc
+//	ctx, __gotraceFinish = __gotraceTracer.Enter(ctx, "Name", gotraceruntime.SpanKindFunction)
 //	defer __gotraceFinish(nil)
+//
+// Using var + assignment (=) instead of short declaration (:=) avoids
+// shadowing the ctx parameter when it was already declared in the function.
 func buildPreamble(ctxParam, name string) []ast.Stmt {
+	varDecl := &ast.DeclStmt{
+		Decl: &ast.GenDecl{
+			Tok: token.VAR,
+			Specs: []ast.Spec{
+				&ast.ValueSpec{
+					Names: []*ast.Ident{ast.NewIdent("__gotraceFinish")},
+					Type: &ast.SelectorExpr{
+						X:   ast.NewIdent("gotraceruntime"),
+						Sel: ast.NewIdent("FinishFunc"),
+					},
+				},
+			},
+		},
+	}
+
 	assign := &ast.AssignStmt{
 		Lhs: []ast.Expr{
 			ast.NewIdent(ctxParam),
 			ast.NewIdent("__gotraceFinish"),
 		},
-		Tok: token.DEFINE,
+		Tok: token.ASSIGN,
 		Rhs: []ast.Expr{
 			&ast.CallExpr{
 				Fun: &ast.SelectorExpr{
@@ -301,7 +320,7 @@ func buildPreamble(ctxParam, name string) []ast.Stmt {
 		},
 	}
 
-	return []ast.Stmt{assign, deferStmt}
+	return []ast.Stmt{varDecl, assign, deferStmt}
 }
 
 // addImport ensures the runtime import is present.
