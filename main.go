@@ -11,10 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/mickamy/go-trace/config"
 	"github.com/mickamy/go-trace/display"
 	"github.com/mickamy/go-trace/instrument"
 	"github.com/mickamy/go-trace/tracer"
+	gotui "github.com/mickamy/go-trace/tui"
 )
 
 const version = "dev"
@@ -22,34 +25,52 @@ const version = "dev"
 const goTraceModule = "github.com/mickamy/go-trace"
 
 func main() {
-	showVersion := flag.Bool("version", false, "print version")
-	configPath := flag.String("config", ".go-trace.yaml", "config file path")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: go-trace [flags] <package>\n\n")
-		fmt.Fprintf(os.Stderr, "Trace HTTP, SQL, and function calls in your Go app.\n\n")
-		fmt.Fprintf(os.Stderr, "Flags:\n")
-		flag.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "Usage: go-trace <command> [flags]\n\n")
+		fmt.Fprintf(os.Stderr, "Commands:\n")
+		fmt.Fprintf(os.Stderr, "  run      Instrument, build, and run a Go package\n")
+		fmt.Fprintf(os.Stderr, "  version  Print version\n")
 	}
 	flag.Parse()
 
-	if *showVersion {
+	cmd := flag.Arg(0)
+	switch cmd {
+	case "run":
+		if err := runCmd(flag.Args()[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	case "version":
 		fmt.Println("go-trace", version)
-		return
-	}
-
-	pkg := flag.Arg(0)
-	if pkg == "" {
+	default:
 		flag.Usage()
-		os.Exit(1)
-	}
-
-	if err := run(pkg, *configPath); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(pkg, configPath string) error {
+func runCmd(args []string) error {
+	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	configPath := fs.String("config", ".go-trace.yaml", "config file path")
+	useTUI := fs.Bool("tui", false, "launch TUI instead of stderr output")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: go-trace run [flags] <package>\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	pkg := fs.Arg(0)
+	if pkg == "" {
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	return run(pkg, *configPath, *useTUI)
+}
+
+func run(pkg, configPath string, useTUI bool) error {
 	cfg := config.Default()
 	if _, err := os.Stat(configPath); err == nil {
 		loaded, err := config.Load(configPath)
@@ -79,11 +100,6 @@ func run(pkg, configPath string) error {
 	socketPath := filepath.Join(tmpDir, "go-trace.sock")
 	col := tracer.NewCollector(socketPath)
 
-	renderer := display.NewRenderer(os.Stdout)
-	col.OnSpanComplete(func(traceID string, span tracer.Span) {
-		renderer.Add(traceID, span)
-	})
-
 	collectorErr := make(chan error, 1)
 	go func() {
 		collectorErr <- col.Start(ctx)
@@ -102,6 +118,27 @@ func run(pkg, configPath string) error {
 	}
 
 	// 4. Run instrumented binary
+	if useTUI {
+		err = runWithTUI(ctx, col, binPath, socketPath)
+	} else {
+		err = runPlain(ctx, col, binPath, socketPath)
+	}
+	if err != nil {
+		return err
+	}
+
+	stop()
+	<-collectorErr
+
+	return nil
+}
+
+func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath string) error {
+	renderer := display.NewRenderer(os.Stderr)
+	col.OnSpanComplete(func(traceID string, span tracer.Span) {
+		renderer.Add(traceID, span)
+	})
+
 	appCmd := exec.CommandContext(ctx, binPath) //nolint:gosec // running instrumented binary
 	appCmd.Stdout = os.Stdout
 	appCmd.Stderr = os.Stderr
@@ -110,10 +147,30 @@ func run(pkg, configPath string) error {
 	if err := appCmd.Run(); err != nil && ctx.Err() == nil {
 		return fmt.Errorf("run: %w", err)
 	}
+	return nil
+}
 
-	stop()
-	<-collectorErr
+func runWithTUI(ctx context.Context, col *tracer.Collector, binPath, socketPath string) error {
+	model := gotui.New()
+	p := tea.NewProgram(model, tea.WithAltScreen())
 
+	bridge := gotui.NewBridge(p)
+	col.OnSpanComplete(bridge.OnSpan)
+
+	appCmd := exec.CommandContext(ctx, binPath) //nolint:gosec // running instrumented binary
+	appWriter := gotui.NewAppWriter(p)
+	appCmd.Stdout = appWriter
+	appCmd.Stderr = appWriter
+	appCmd.Env = append(os.Environ(), "GOTRACE_SOCKET="+socketPath)
+
+	go func() {
+		_ = appCmd.Run()
+		p.Send(gotui.AppExitMsg{})
+	}()
+
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("tui: %w", err)
+	}
 	return nil
 }
 

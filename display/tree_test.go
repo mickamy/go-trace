@@ -121,6 +121,37 @@ func TestRenderer_MultipleChildren(t *testing.T) {
 	}
 }
 
+func TestFormatTree(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	spans := []tracer.Span{
+		tracer.NewSpan("s3", "t1", "SQL Query", tracer.SpanKindSQL,
+			now.Add(20*time.Microsecond), now.Add(200*time.Microsecond)).
+			WithParentID("s2"),
+		tracer.NewSpan("s2", "t1", "ListUsers", tracer.SpanKindFunction,
+			now.Add(10*time.Microsecond), now.Add(250*time.Microsecond)).
+			WithParentID("s1"),
+		tracer.NewSpan("s1", "t1", "GET /users", tracer.SpanKindHTTP,
+			now, now.Add(300*time.Microsecond)),
+	}
+
+	got := display.FormatTree(spans)
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d:\n%s", len(lines), got)
+	}
+	if !strings.Contains(lines[0], "GET /users [http]") {
+		t.Errorf("line 0: %s", lines[0])
+	}
+	if !strings.Contains(lines[1], "└── ListUsers [function]") {
+		t.Errorf("line 1: %s", lines[1])
+	}
+	if !strings.Contains(lines[2], "    └── SQL Query [sql]") {
+		t.Errorf("line 2: %s", lines[2])
+	}
+}
+
 func TestRenderer_IndependentTraces(t *testing.T) {
 	t.Parallel()
 

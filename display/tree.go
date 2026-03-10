@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/mickamy/go-trace/tracer"
@@ -39,15 +40,23 @@ func (r *Renderer) Add(traceID string, span tracer.Span) {
 	}
 }
 
-// printTrace builds a tree from flat spans and prints it.
+// FormatTree builds a trace tree from flat spans and returns
+// the formatted string. Useful for TUI and testing.
+func FormatTree(spans []tracer.Span) string {
+	root := BuildTree(spans)
+	var b strings.Builder
+	printNode(&b, root, "", true, true)
+	return b.String()
+}
+
 func printTrace(w io.Writer, spans []tracer.Span) {
-	root := buildTree(spans)
+	root := BuildTree(spans)
 	printNode(w, root, "", true, true)
 	fmt.Fprintln(w)
 }
 
-// buildTree assembles a span tree from a flat slice.
-func buildTree(spans []tracer.Span) tracer.Span {
+// BuildTree assembles a span tree from a flat slice.
+func BuildTree(spans []tracer.Span) tracer.Span {
 	var root tracer.Span
 	children := make(map[string][]tracer.Span)
 
