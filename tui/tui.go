@@ -312,7 +312,11 @@ func (m Model) traceVisibleRows() int {
 }
 
 func (m Model) maxTraceScroll() int {
-	return max(len(m.displayLines())-m.traceVisibleRows(), 0)
+	totalLines := 1 // header row
+	for _, entry := range m.traces {
+		totalLines += entry.lineCount()
+	}
+	return max(totalLines-m.traceVisibleRows(), 0)
 }
 
 func (m Model) renderTracePane() string {
@@ -354,9 +358,13 @@ func (m Model) renderBox(innerWidth int, content, title string) string {
 	if len(boxLines) > 0 {
 		borderFg := lipgloss.NewStyle().Foreground(borderColor)
 		titleStyle := lipgloss.NewStyle().Bold(true)
-		dashes := max(innerWidth-len([]rune(title)), 0)
+		titleRunes := []rune(title)
+		if len(titleRunes) > innerWidth-2 { // 2 = border corners
+			titleRunes = titleRunes[:max(innerWidth-2, 0)]
+		}
+		dashes := max(innerWidth-len(titleRunes), 0)
 		boxLines[0] = borderFg.Render("╭") +
-			titleStyle.Render(title) +
+			titleStyle.Render(string(titleRunes)) +
 			borderFg.Render(strings.Repeat("─", dashes)+"╮")
 	}
 
@@ -407,13 +415,14 @@ func formatDuration(d time.Duration) string {
 }
 
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
 	if maxLen <= 1 {
-		return s[:maxLen]
+		return string(runes[:maxLen])
 	}
-	return s[:maxLen-1] + "…"
+	return string(runes[:maxLen-1]) + "…"
 }
 
 func padRight(s string, width int) string {
