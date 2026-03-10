@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 // Collector receives trace events over a Unix domain socket
@@ -125,13 +126,15 @@ const maxScanTokenSize = 1 << 20 // 1 MiB
 func (c *Collector) handleConn(ctx context.Context, conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
+	// When context is cancelled, set a past deadline to unblock the scanner.
+	go func() {
+		<-ctx.Done()
+		_ = conn.SetDeadline(time.Now())
+	}()
+
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 0, maxScanTokenSize), maxScanTokenSize)
 	for scanner.Scan() {
-		if ctx.Err() != nil {
-			return
-		}
-
 		var ev Event
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
 			continue
