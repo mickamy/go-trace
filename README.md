@@ -38,8 +38,8 @@ make install
 ## Quick start
 
 ```sh
-# Instrument, build, and run your app
-go-trace run ./path/to/your/app
+# From your module root (directory containing go.mod)
+go-trace run .
 
 # In another terminal, open the TUI viewer
 go-trace view
@@ -91,7 +91,8 @@ db, err := gotraceruntime.OpenDB(__gotraceTracer, "postgres", dsn)
 
 ## Configuration
 
-Create a `.go-trace.yaml` in your project root to control which files are instrumented:
+Place a `.go-trace.yaml` in the directory where you run `go-trace` (or specify `-config path/to/config.yaml`).
+The config path is resolved relative to the current working directory:
 
 ```yaml
 instrument:
