@@ -88,7 +88,12 @@ func rewriteFuncs(file *ast.File) bool {
 
 // rewriteSQLOpen replaces sql.Open(...) with gotraceruntime.OpenDB(__gotraceTracer, ...).
 // Returns true if any call was rewritten.
+// Only rewrites when "database/sql" is actually imported (not a local variable named sql).
 func rewriteSQLOpen(file *ast.File) bool {
+	if !hasImport(file, "sql", "database/sql") {
+		return false
+	}
+
 	modified := false
 
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -123,7 +128,12 @@ func rewriteSQLOpen(file *ast.File) bool {
 // http.ListenAndServe(addr, handler) with gotraceruntime.Middleware.
 // Also handles http.ListenAndServeTLS.
 // Returns true if any call was rewritten.
+// Only rewrites when "net/http" is actually imported (not a local variable named http).
 func rewriteHTTPListenAndServe(file *ast.File) bool {
+	if !hasImport(file, "http", "net/http") {
+		return false
+	}
+
 	modified := false
 
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -379,6 +389,24 @@ func removeUnusedImport(file *ast.File, ident, importPath string) {
 		imports = append(imports, imp)
 	}
 	file.Imports = imports
+}
+
+// hasImport reports whether the file imports importPath with the given
+// local name (either as the default package name or an explicit alias).
+func hasImport(file *ast.File, localName, importPath string) bool {
+	quotedPath := fmt.Sprintf("%q", importPath)
+	for _, imp := range file.Imports {
+		if imp.Path.Value != quotedPath {
+			continue
+		}
+		// Explicit alias must match.
+		if imp.Name != nil {
+			return imp.Name.Name == localName
+		}
+		// No alias — the default package name is the last path element.
+		return true
+	}
+	return false
 }
 
 // addImport ensures the runtime import is present.
