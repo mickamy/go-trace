@@ -17,7 +17,7 @@ import (
 	"github.com/mickamy/go-trace/display"
 	"github.com/mickamy/go-trace/instrument"
 	"github.com/mickamy/go-trace/tracer"
-	gotui "github.com/mickamy/go-trace/tui"
+	"github.com/mickamy/go-trace/tui"
 )
 
 const version = "dev"
@@ -172,15 +172,15 @@ func viewCmd() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	model := gotui.New()
+	model := tui.New()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
-	bridge := gotui.NewBridge(p)
+	bridge := tui.NewBridge(p)
 
 	client := tracer.NewViewClient(viewSocketPath())
 	go func() {
 		_ = client.Run(ctx, bridge.OnSpan)
-		p.Send(gotui.AppExitMsg{})
+		p.Send(tui.AppExitMsg{})
 	}()
 
 	if _, err := p.Run(); err != nil {
