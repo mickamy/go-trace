@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 // ViewServer broadcasts completed spans to connected view clients
@@ -116,10 +117,12 @@ func (s *ViewServer) Broadcast(span Span) {
 	}
 	s.mu.Unlock()
 
-	// Write outside the lock so a slow client doesn't block others.
+	// Write outside the lock with a deadline so a slow client
+	// cannot block delivery to others.
 	var failed []net.Conn
 	for _, conn := range snapshot {
-		if _, err := conn.Write(line); err != nil {
+		_ = conn.SetWriteDeadline(time.Now().Add(broadcastWriteTimeout))
+		if _, err := writeFull(conn, line); err != nil {
 			_ = conn.Close()
 			failed = append(failed, conn)
 		}
@@ -158,4 +161,28 @@ func (s *ViewServer) Close() error {
 // SocketPath returns the path of the Unix domain socket.
 func (s *ViewServer) SocketPath() string {
 	return s.socketPath
+}
+
+// ConnCount returns the number of active client connections.
+func (s *ViewServer) ConnCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.conns)
+}
+
+// broadcastWriteTimeout is the maximum time allowed for writing a
+// single span line to a client connection.
+const broadcastWriteTimeout = 5 * time.Second
+
+// writeFull writes all of p to w, handling short writes.
+func writeFull(w net.Conn, p []byte) (int, error) {
+	total := 0
+	for total < len(p) {
+		n, err := w.Write(p[total:])
+		total += n
+		if err != nil {
+			return total, fmt.Errorf("write: %w", err)
+		}
+	}
+	return total, nil
 }
