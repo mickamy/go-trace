@@ -26,6 +26,7 @@ const (
 	colMarker   = 4  // "▶ " + "▾ "
 	colKind     = 10 // "function" + padding
 	colDuration = 12
+	colTime     = 12 // "15:04:05.000"
 )
 
 // traceEntry holds a single trace tree with collapse state.
@@ -143,12 +144,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// displayLines builds all visible lines with cursor/chevron and columns.
+// displayLines builds all visible lines with header, cursor/chevron and columns.
 func (m Model) displayLines() []string {
 	innerWidth := max(m.width-4, 20)
-	colName := max(innerWidth-colMarker-colKind-colDuration-2, 10) // 2 = gaps
+	colName := max(innerWidth-colMarker-colKind-colDuration-colTime-3, 10) // 3 = gaps
 
-	var out []string
+	header := fmt.Sprintf("    %-*s %-*s %*s %*s",
+		colKind, "Kind",
+		colName, "Name",
+		colDuration, "Duration",
+		colTime, "Time",
+	)
+	out := []string{lipgloss.NewStyle().Bold(true).Render(header)}
+
 	for i, entry := range m.traces {
 		isCursor := i == m.cursor
 		lines := m.renderSpanRows(entry, isCursor, colName)
@@ -212,23 +220,26 @@ func (m Model) formatSpanRow(marker, chevron, treePrefix string, span tracer.Spa
 
 	kind := span.Kind.String()
 	dur := formatDuration(span.Duration())
+	t := formatTime(span.StartTime)
 
 	kindStyled := lipgloss.NewStyle().
 		Foreground(kindColor(span.Kind)).
 		Render(kind)
 
 	if bold {
-		boldStyle := lipgloss.NewStyle().Bold(true)
-		return boldStyle.Render(marker+chevron) +
-			padRight(boldStyle.Render(name), colName) + " " +
+		b := lipgloss.NewStyle().Bold(true)
+		return b.Render(marker+chevron) +
 			padRight(kindStyled, colKind) + " " +
-			padLeft(boldStyle.Render(dur), colDuration)
+			padRight(b.Render(name), colName) + " " +
+			padLeft(b.Render(dur), colDuration) + " " +
+			padLeft(b.Render(t), colTime)
 	}
 
 	return marker + chevron +
-		padRight(name, colName) + " " +
 		padRight(kindStyled, colKind) + " " +
-		padLeft(dur, colDuration)
+		padRight(name, colName) + " " +
+		padLeft(dur, colDuration) + " " +
+		padLeft(t, colTime)
 }
 
 func kindColor(kind tracer.SpanKind) lipgloss.Color {
@@ -242,6 +253,13 @@ func kindColor(kind tracer.SpanKind) lipgloss.Color {
 	default:
 		return lipgloss.Color("7")
 	}
+}
+
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Local().Format("15:04:05.000") //nolint:gosmopolitan // TUI displays local time
 }
 
 func formatDuration(d time.Duration) string {
@@ -310,7 +328,7 @@ func (m Model) clampScroll() Model {
 }
 
 func (m Model) traceVisibleRows() int {
-	return max(m.height-4, 3) // border(2) + title(1) + footer(1)
+	return max(m.height-4, 3) // border(2) + title(1) + footer(1); header is part of displayLines
 }
 
 func (m Model) maxTraceScroll() int {
