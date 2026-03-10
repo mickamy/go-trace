@@ -132,24 +132,31 @@ func run(pkg, configPath string) error {
 	return nil
 }
 
-func startViewServer(ctx context.Context, col *tracer.Collector) *tracer.ViewServer {
+func startViewServer(ctx context.Context, col *tracer.Collector) (*tracer.ViewServer, error) {
 	sockPath := filepath.Join(os.TempDir(), fmt.Sprintf("go-trace-view-%d.sock", os.Getpid()))
 	srv := tracer.NewViewServer(sockPath)
 	col.OnSpanComplete(func(_ string, span tracer.Span) {
 		srv.Broadcast(span)
 	})
 
+	if err := srv.Listen(ctx); err != nil {
+		return nil, fmt.Errorf("view server listen: %w", err)
+	}
+
 	go func() {
-		if err := srv.Start(ctx); err != nil {
+		if err := srv.Serve(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "view server: %v\n", err)
 		}
 	}()
 
-	return srv
+	return srv, nil
 }
 
 func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath string) error {
-	srv := startViewServer(ctx, col)
+	srv, err := startViewServer(ctx, col)
+	if err != nil {
+		return err
+	}
 	defer func() { _ = srv.Close() }()
 
 	renderer := display.NewRenderer(os.Stderr)

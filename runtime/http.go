@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -64,7 +65,7 @@ func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if h, ok := rw.ResponseWriter.(http.Hijacker); ok {
 		return h.Hijack() //nolint:wrapcheck // transparent delegation
 	}
-	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+	return nil, nil, errors.New("underlying ResponseWriter does not implement http.Hijacker")
 }
 
 // Unwrap returns the underlying ResponseWriter for interface detection.

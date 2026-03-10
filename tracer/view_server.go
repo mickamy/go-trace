@@ -28,9 +28,20 @@ func NewViewServer(socketPath string) *ViewServer {
 	}
 }
 
-// Start begins accepting view client connections.
+// Start binds the socket and begins accepting connections.
 // It blocks until the context is cancelled.
 func (s *ViewServer) Start(ctx context.Context) error {
+	if err := s.Listen(ctx); err != nil {
+		return err
+	}
+	return s.Serve(ctx)
+}
+
+// Listen creates the Unix domain socket. Call Serve afterwards
+// to begin accepting connections. This split allows callers to
+// detect listen errors synchronously before launching Serve in
+// a goroutine.
+func (s *ViewServer) Listen(ctx context.Context) error {
 	if err := os.RemoveAll(s.socketPath); err != nil {
 		return fmt.Errorf("remove existing socket: %w", err)
 	}
@@ -44,6 +55,20 @@ func (s *ViewServer) Start(ctx context.Context) error {
 	s.mu.Lock()
 	s.listener = ln
 	s.mu.Unlock()
+
+	return nil
+}
+
+// Serve accepts connections on the already-bound listener.
+// It blocks until the context is cancelled or the listener is closed.
+func (s *ViewServer) Serve(ctx context.Context) error {
+	s.mu.Lock()
+	ln := s.listener
+	s.mu.Unlock()
+
+	if ln == nil {
+		return errors.New("listener not initialized; call Listen first")
+	}
 
 	go func() {
 		<-ctx.Done()
