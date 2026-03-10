@@ -18,12 +18,7 @@ type TraceMsg struct {
 	Root tracer.Span
 }
 
-// AppOutputMsg is sent when the app writes to stdout/stderr.
-type AppOutputMsg struct {
-	Line string
-}
-
-// AppExitMsg is sent when the instrumented app exits.
+// AppExitMsg is sent when the trace source disconnects.
 type AppExitMsg struct{}
 
 // Column widths.
@@ -57,27 +52,19 @@ func countSpanLines(span tracer.Span) int {
 
 // Model is the bubbletea model for the go-trace TUI.
 type Model struct {
-	traces     []traceEntry
-	appLines   []string
-	cursor     int
-	width      int
-	height     int
-	quitting   bool
-	tracesOnly bool
-	follow     bool
+	traces   []traceEntry
+	cursor   int
+	width    int
+	height   int
+	quitting bool
+	follow   bool
 
 	traceScroll int
-	appScroll   int
 }
 
-// New creates a new TUI model with two panes (traces + app output).
+// New creates a new TUI model.
 func New() Model {
 	return Model{follow: true}
-}
-
-// NewTracesOnly creates a TUI model with only the traces pane.
-func NewTracesOnly() Model {
-	return Model{tracesOnly: true, follow: true}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -103,13 +90,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.follow {
 			m.cursor = len(m.traces) - 1
 			m.traceScroll = m.maxTraceScroll()
-		}
-		return m, nil
-
-	case AppOutputMsg:
-		m.appLines = append(m.appLines, msg.Line)
-		if m.follow {
-			m.appScroll = m.maxAppScroll()
 		}
 		return m, nil
 
@@ -330,22 +310,11 @@ func (m Model) clampScroll() Model {
 }
 
 func (m Model) traceVisibleRows() int {
-	if m.tracesOnly {
-		return max(m.height-4, 3)
-	}
-	return max(m.height*2/3-3, 3)
-}
-
-func (m Model) appVisibleRows() int {
-	return max(m.height-m.traceVisibleRows()-5, 3)
+	return max(m.height-4, 3) // border(2) + title(1) + footer(1)
 }
 
 func (m Model) maxTraceScroll() int {
 	return max(len(m.displayLines())-m.traceVisibleRows(), 0)
-}
-
-func (m Model) maxAppScroll() int {
-	return max(len(m.appLines)-m.appVisibleRows(), 0)
 }
 
 func (m Model) View() string {
@@ -358,13 +327,7 @@ func (m Model) View() string {
 
 	traceBox := m.renderTracePane()
 	footer := m.renderFooter()
-
-	if m.tracesOnly {
-		return traceBox + "\n" + footer
-	}
-
-	appBox := m.renderAppPane()
-	return traceBox + "\n" + appBox + "\n" + footer
+	return traceBox + "\n" + footer
 }
 
 func (m Model) renderTracePane() string {
@@ -385,25 +348,6 @@ func (m Model) renderTracePane() string {
 
 	content := strings.Join(visible, "\n")
 	return m.renderBox(innerWidth, content, m.traceTitle())
-}
-
-func (m Model) renderAppPane() string {
-	innerWidth := max(m.width-4, 20)
-	visibleRows := m.appVisibleRows()
-
-	start := m.appScroll
-	if start > len(m.appLines) {
-		start = len(m.appLines)
-	}
-	end := min(start+visibleRows, len(m.appLines))
-	visible := m.appLines[start:end]
-
-	for len(visible) < visibleRows {
-		visible = append(visible, "")
-	}
-
-	content := strings.Join(visible, "\n")
-	return m.renderBox(innerWidth, content, " App Output ")
 }
 
 func (m Model) traceTitle() string {
@@ -478,32 +422,4 @@ func (b *Bridge) OnSpan(traceID string, span tracer.Span) {
 		delete(b.traces, traceID)
 		b.program.Send(TraceMsg{Root: root})
 	}
-}
-
-// AppWriter is an io.Writer that sends each line to the TUI
-// as an AppOutputMsg.
-type AppWriter struct {
-	program *tea.Program
-	buf     []byte
-}
-
-// NewAppWriter creates a writer that forwards lines to the TUI.
-func NewAppWriter(p *tea.Program) *AppWriter {
-	return &AppWriter{program: p}
-}
-
-func (w *AppWriter) Write(data []byte) (int, error) {
-	w.buf = append(w.buf, data...)
-
-	for {
-		idx := strings.IndexByte(string(w.buf), '\n')
-		if idx < 0 {
-			break
-		}
-		line := string(w.buf[:idx])
-		w.buf = w.buf[idx+1:]
-		w.program.Send(AppOutputMsg{Line: line})
-	}
-
-	return len(data), nil
 }

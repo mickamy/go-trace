@@ -56,7 +56,6 @@ func main() {
 func runCmd(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	configPath := fs.String("config", ".go-trace.yaml", "config file path")
-	useTUI := fs.Bool("tui", false, "launch TUI instead of stderr output")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: go-trace run [flags] <package>\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
@@ -72,10 +71,10 @@ func runCmd(args []string) error {
 		os.Exit(1)
 	}
 
-	return run(pkg, *configPath, *useTUI)
+	return run(pkg, *configPath)
 }
 
-func run(pkg, configPath string, useTUI bool) error {
+func run(pkg, configPath string) error {
 	cfg := config.Default()
 	if _, err := os.Stat(configPath); err == nil {
 		loaded, err := config.Load(configPath)
@@ -123,12 +122,7 @@ func run(pkg, configPath string, useTUI bool) error {
 	}
 
 	// 4. Run instrumented binary
-	if useTUI {
-		err = runWithTUI(ctx, col, binPath, socketPath)
-	} else {
-		err = runPlain(ctx, col, binPath, socketPath)
-	}
-	if err != nil {
+	if err := runPlain(ctx, col, binPath, socketPath); err != nil {
 		return err
 	}
 
@@ -174,53 +168,18 @@ func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath st
 	return nil
 }
 
-func runWithTUI(ctx context.Context, col *tracer.Collector, binPath, socketPath string) error {
-	srv, err := startViewServer(ctx, col)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = srv.Close() }()
-
-	model := gotui.New()
-	p := tea.NewProgram(model, tea.WithAltScreen())
-
-	bridge := gotui.NewBridge(p)
-	col.OnSpanComplete(bridge.OnSpan)
-
-	appCmd := exec.CommandContext(ctx, binPath) //nolint:gosec // running instrumented binary
-	appWriter := gotui.NewAppWriter(p)
-	appCmd.Stdout = appWriter
-	appCmd.Stderr = appWriter
-	appCmd.Env = append(os.Environ(), "GOTRACE_SOCKET="+socketPath)
-
-	go func() {
-		_ = appCmd.Run()
-		p.Send(gotui.AppExitMsg{})
-	}()
-
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("tui: %w", err)
-	}
-	return nil
-}
-
 func viewCmd() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	model := gotui.NewTracesOnly()
+	model := gotui.New()
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	bridge := gotui.NewBridge(p)
 
 	client := tracer.NewViewClient(viewSocketPath())
 	go func() {
-		err := client.Run(ctx, bridge.OnSpan)
-		if err != nil {
-			p.Send(gotui.AppOutputMsg{
-				Line: "connection error: " + err.Error(),
-			})
-		}
+		_ = client.Run(ctx, bridge.OnSpan)
 		p.Send(gotui.AppExitMsg{})
 	}()
 
