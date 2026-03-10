@@ -70,7 +70,7 @@ func runCmd(args []string) error {
 	pkg := fs.Arg(0)
 	if pkg == "" {
 		fs.Usage()
-		os.Exit(1)
+		return errors.New("package argument is required")
 	}
 
 	return run(pkg, *configPath)
