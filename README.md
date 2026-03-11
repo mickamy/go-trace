@@ -5,6 +5,8 @@ Instantly visualize request flows in your Go application — no infrastructure, 
 go-trace rewrites your source code at the AST level to inject tracing, builds the instrumented binary, and displays the
 collected traces in real time.
 
+![demo](./demo.gif)
+
 ## Features
 
 - **Zero-config tracing** — instruments exported functions, HTTP handlers, and SQL queries automatically
