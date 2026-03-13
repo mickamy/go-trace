@@ -1,6 +1,7 @@
 package analysis_test
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -8,7 +9,10 @@ import (
 	"github.com/mickamy/go-trace/tracer"
 )
 
-func makeSpan(kind tracer.SpanKind, name string, dur time.Duration, attrs map[string]string, children ...tracer.Span) tracer.Span {
+func makeSpan(
+	kind tracer.SpanKind, name string, dur time.Duration,
+	attrs map[string]string, children ...tracer.Span,
+) tracer.Span {
 	s := tracer.NewSpan("id", "trace", name, kind, time.Now(), time.Now().Add(dur))
 	for k, v := range attrs {
 		s = s.WithAttr(k, v)
@@ -34,7 +38,7 @@ func TestAnalyze_Endpoints(t *testing.T) {
 		t.Fatalf("expected 1 endpoint, got %d", len(report.Endpoints))
 	}
 	ep := report.Endpoints[0]
-	if ep.Method != "GET" {
+	if ep.Method != http.MethodGet {
 		t.Errorf("Method = %q, want %q", ep.Method, "GET")
 	}
 	if ep.Path != "/api/users/42" {
@@ -127,7 +131,7 @@ func TestAnalyze_N1Detection(t *testing.T) {
 	})
 
 	// Add 6 identical SQL queries as children (above n1Threshold=5)
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		sql := makeSpan(tracer.SpanKindSQL, "query", 5*time.Millisecond, map[string]string{
 			"query": "SELECT * FROM items WHERE id = 1",
 		})
@@ -152,7 +156,7 @@ func TestAnalyze_N1BelowThreshold(t *testing.T) {
 	})
 
 	// Only 3 queries, below threshold
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		sql := makeSpan(tracer.SpanKindSQL, "query", 5*time.Millisecond, map[string]string{
 			"query": "SELECT * FROM items WHERE id = 1",
 		})

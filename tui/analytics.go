@@ -63,7 +63,7 @@ func (m Model) analyticsDisplayLines(innerWidth int) []string {
 	tabBar := m.renderTabBar()
 	lines := []string{tabBar, ""}
 
-	sortLabel := fmt.Sprintf("sort: %s", m.analyticsSort.String())
+	sortLabel := "sort: " + m.analyticsSort.String()
 	faint := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
 	switch m.analyticsTab {

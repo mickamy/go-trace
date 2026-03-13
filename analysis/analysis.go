@@ -38,21 +38,24 @@ func (k SortKey) String() string {
 
 // EndpointStat holds aggregated statistics for an HTTP endpoint.
 type EndpointStat struct {
+	Stats
+
 	Method string
 	Path   string
-	Stats
 }
 
 // SQLStat holds aggregated statistics for a normalized SQL query.
 type SQLStat struct {
-	Query string
 	Stats
+
+	Query string
 }
 
 // FuncStat holds aggregated statistics for a function.
 type FuncStat struct {
-	Name string
 	Stats
+
+	Name string
 }
 
 // N1Detection represents a potential N+1 query pattern.
@@ -78,10 +81,10 @@ const n1Threshold = 5
 // mg may be nil, in which case URIs are used as-is.
 func Analyze(roots []tracer.Span, mg *MatchingGroups) Report {
 	endpointDurations := make(map[string][]time.Duration) // "METHOD path" -> durations
-	endpointMethods := make(map[string]string)             // "METHOD path" -> method
-	endpointPaths := make(map[string]string)               // "METHOD path" -> path
+	endpointMethods := make(map[string]string)            // "METHOD path" -> method
+	endpointPaths := make(map[string]string)              // "METHOD path" -> path
 
-	sqlDurations := make(map[string][]time.Duration) // normalized query -> durations
+	sqlDurations := make(map[string][]time.Duration)  // normalized query -> durations
 	funcDurations := make(map[string][]time.Duration) // func name -> durations
 
 	// N+1 detection: per-trace query counts

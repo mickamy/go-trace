@@ -61,7 +61,7 @@ func countSpanLines(span tracer.Span) int {
 type viewMode int
 
 const (
-	viewTrace     viewMode = iota
+	viewTrace viewMode = iota
 	viewAnalytics
 )
 
@@ -157,11 +157,13 @@ func (m Model) View() string {
 	}
 
 	switch m.mode {
+	case viewTrace:
+		return m.renderTracePane() + "\n" + m.renderFooter()
 	case viewAnalytics:
 		return m.renderAnalyticsPane() + "\n" + m.renderAnalyticsFooter()
-	default:
-		return m.renderTracePane() + "\n" + m.renderFooter()
 	}
+
+	return m.renderTracePane() + "\n" + m.renderFooter()
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

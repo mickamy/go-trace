@@ -62,7 +62,7 @@ func NewMatchingGroups(patterns []string) (*MatchingGroups, error) {
 			anchored = "^" + anchored
 		}
 		if !strings.HasSuffix(anchored, "$") {
-			anchored = anchored + "$"
+			anchored += "$"
 		}
 		re, err := regexp.Compile(anchored)
 		if err != nil {

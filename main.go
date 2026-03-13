@@ -266,7 +266,7 @@ func discoverViewSocket() (string, error) {
 // Returns nil (no grouping) if the config file doesn't exist or has no patterns.
 func loadMatchingGroups() (*analysis.MatchingGroups, error) {
 	if _, err := os.Stat(".go-trace.yaml"); errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // no config file means no grouping
 	}
 
 	cfg, err := config.Load(".go-trace.yaml")
@@ -275,7 +275,7 @@ func loadMatchingGroups() (*analysis.MatchingGroups, error) {
 	}
 
 	if len(cfg.Analysis.MatchingGroups) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // no patterns means no grouping
 	}
 
 	mg, err := analysis.NewMatchingGroups(cfg.Analysis.MatchingGroups)
