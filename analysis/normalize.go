@@ -19,7 +19,7 @@ var (
 	// UUIDs: 8-4-4-4-12 hex pattern
 	reUUID = regexp.MustCompile(`\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`)
 
-	// Hex strings: 0x... or standalone hex of 8+ chars
+	// Hex strings: 0x-prefixed (e.g. 0xDEADBEEF)
 	reHex = regexp.MustCompile(`\b0x[0-9a-fA-F]+\b`)
 
 	// IN list compression: IN (?, ?, ..., ?) -> IN (?)
