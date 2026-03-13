@@ -49,6 +49,8 @@ func Percentile(sorted []time.Duration, pct float64) time.Duration {
 		return 0
 	}
 
+	pct = max(0, min(1, pct))
+
 	// Nearest-rank: ceil(pct * N) gives the 1-based rank.
 	rank := int(math.Ceil(pct * float64(len(sorted))))
 	if rank < 1 {

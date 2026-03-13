@@ -293,7 +293,14 @@ func compareStat(a, b Stats, key SortKey) int {
 	case SortByP95:
 		av, bv = a.P95, b.P95
 	case SortByCount:
-		return a.Count - b.Count
+		switch {
+		case a.Count < b.Count:
+			return -1
+		case a.Count > b.Count:
+			return 1
+		default:
+			return 0
+		}
 	}
 	switch {
 	case av < bv:
