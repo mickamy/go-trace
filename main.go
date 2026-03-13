@@ -15,6 +15,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/mickamy/go-trace/analysis"
 	"github.com/mickamy/go-trace/config"
 	"github.com/mickamy/go-trace/display"
 	"github.com/mickamy/go-trace/instrument"
@@ -187,7 +188,12 @@ func viewCmd() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	model := tui.New()
+	mg, err := loadMatchingGroups()
+	if err != nil {
+		return err
+	}
+
+	model := tui.New(mg)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	bridge := tui.NewBridge(p)
@@ -254,6 +260,25 @@ func discoverViewSocket() (string, error) {
 		}
 		return "", errors.New(b.String())
 	}
+}
+
+// loadMatchingGroups reads .go-trace.yaml and returns compiled MatchingGroups.
+// Returns nil (no grouping) if the config file doesn't exist or has no patterns.
+func loadMatchingGroups() (*analysis.MatchingGroups, error) {
+	cfg, err := config.Load(".go-trace.yaml")
+	if err != nil {
+		return nil, nil //nolint:nilerr // missing config is fine
+	}
+
+	if len(cfg.Analysis.MatchingGroups) == 0 {
+		return nil, nil
+	}
+
+	mg, err := analysis.NewMatchingGroups(cfg.Analysis.MatchingGroups)
+	if err != nil {
+		return nil, fmt.Errorf("compile matching groups: %w", err)
+	}
+	return mg, nil
 }
 
 // addRuntimeDep adds github.com/mickamy/go-trace as a dependency

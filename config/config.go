@@ -12,6 +12,12 @@ import (
 // Config represents .go-trace.yaml.
 type Config struct {
 	Instrument InstrumentConfig `yaml:"instrument"`
+	Analysis   AnalysisConfig   `yaml:"analysis"`
+}
+
+// AnalysisConfig controls the analytics view behavior.
+type AnalysisConfig struct {
+	MatchingGroups []string `yaml:"matching_groups"`
 }
 
 // InstrumentConfig controls which files are instrumented.
