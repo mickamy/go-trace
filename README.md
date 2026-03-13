@@ -171,11 +171,11 @@ Collector ─── assembles spans into trees
 
 ```
 go-trace run [flags] <dir>    Instrument, build, and run a Go package
-go-trace view                 Connect to a running session and display traces in TUI
+go-trace view [flags]         Connect to a running session and display traces in TUI
 go-trace version              Print version
 ```
 
-### `run` flags
+### `run` / `view` flags
 
 | Flag      | Default          | Description         |
 |-----------|------------------|---------------------|
