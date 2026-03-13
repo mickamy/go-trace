@@ -12,6 +12,7 @@ collected traces in real time.
 - **Zero-config tracing** — instruments exported functions, HTTP handlers, and SQL queries automatically
 - **AST-based rewriting** — no manual annotation or SDK integration required
 - **Real-time TUI** — browse trace trees with collapsible spans, color-coded by kind
+- **Analytics view** — press `a` to switch to aggregated statistics with endpoint / SQL / function / N+1 tabs
 - **Multi-session friendly** — run multiple traced apps; `go-trace view` auto-connects when a single session is active
 - **No infrastructure** — uses Unix domain sockets for IPC, no external services needed
 
@@ -101,14 +102,29 @@ instrument:
   include:
     - "cmd/**/*.go"
     - "internal/handler/**/*.go"
+
+analysis:
+  matching_groups:
+    - "/api/isu/.+"
+    - "/api/condition/.+"
+    - "/api/users/.+/icon"
 ```
 
 The default configuration instruments all Go files (`**/*.go`), excluding test files.
 
+### `analysis.matching_groups`
+
+Groups URIs by regex patterns in the analytics view (same approach as [alp](https://github.com/tkuchiki/alp)'s `--matching-groups`).
+Patterns are evaluated top-to-bottom; the first match wins and the pattern string itself becomes the group key.
+URIs that don't match any pattern are displayed as-is.
+
 ## TUI keybindings
+
+### Trace view (default)
 
 | Key            | Action                       |
 |----------------|------------------------------|
+| `a`            | Switch to analytics view     |
 | `j` / `Down`   | Next trace                   |
 | `k` / `Up`     | Previous trace               |
 | `Space`        | Collapse / expand trace      |
@@ -117,6 +133,20 @@ The default configuration instruments all Go files (`**/*.go`), excluding test f
 | `G`            | Jump to bottom (follow mode) |
 | `g`            | Jump to top                  |
 | `q` / `Ctrl+C` | Quit                         |
+
+### Analytics view
+
+| Key            | Action                              |
+|----------------|-------------------------------------|
+| `Esc`          | Back to trace view                  |
+| `Tab`          | Next section (Endpoint/SQL/Func/N+1)|
+| `Shift+Tab`    | Previous section                    |
+| `s`            | Cycle sort key (total/avg/p95/count)|
+| `j` / `Down`   | Scroll down                         |
+| `k` / `Up`     | Scroll up                           |
+| `G`            | Jump to bottom                      |
+| `g`            | Jump to top                         |
+| `q` / `Ctrl+C` | Quit                                |
 
 ## Architecture
 
