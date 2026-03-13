@@ -57,7 +57,7 @@ func main() {
 }
 
 func runCmd(args []string) error {
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	configPath := fs.String("config", ".go-trace.yaml", "config file path")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: go-trace run [flags] <dir>\n\n")
@@ -180,7 +180,7 @@ func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath st
 }
 
 func viewCmd(args []string) error {
-	fs := flag.NewFlagSet("view", flag.ExitOnError)
+	fs := flag.NewFlagSet("view", flag.ContinueOnError)
 	configPath := fs.String("config", ".go-trace.yaml", "config file path")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: go-trace view [flags]\n\nFlags:\n")
