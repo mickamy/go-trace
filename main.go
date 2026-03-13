@@ -43,7 +43,7 @@ func main() {
 	case "run":
 		err = runCmd(flag.Args()[1:])
 	case "view":
-		err = viewCmd()
+		err = viewCmd(flag.Args()[1:])
 	case "version":
 		fmt.Println("go-trace", version)
 	default:
@@ -179,7 +179,17 @@ func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath st
 	return nil
 }
 
-func viewCmd() error {
+func viewCmd(args []string) error {
+	fs := flag.NewFlagSet("view", flag.ExitOnError)
+	configPath := fs.String("config", ".go-trace.yaml", "config file path")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: go-trace view [flags]\n\nFlags:\n")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("parse flags: %w", err)
+	}
+
 	sockPath, err := discoverViewSocket()
 	if err != nil {
 		return err
@@ -188,7 +198,7 @@ func viewCmd() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	mg, err := loadMatchingGroups()
+	mg, err := loadMatchingGroups(*configPath)
 	if err != nil {
 		return err
 	}
@@ -262,14 +272,14 @@ func discoverViewSocket() (string, error) {
 	}
 }
 
-// loadMatchingGroups reads .go-trace.yaml and returns compiled MatchingGroups.
+// loadMatchingGroups reads the config file and returns compiled MatchingGroups.
 // Returns nil (no grouping) if the config file doesn't exist or has no patterns.
-func loadMatchingGroups() (*analysis.MatchingGroups, error) {
-	if _, err := os.Stat(".go-trace.yaml"); errors.Is(err, os.ErrNotExist) {
+func loadMatchingGroups(path string) (*analysis.MatchingGroups, error) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return nil, nil //nolint:nilnil // no config file means no grouping
 	}
 
-	cfg, err := config.Load(".go-trace.yaml")
+	cfg, err := config.Load(path)
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
