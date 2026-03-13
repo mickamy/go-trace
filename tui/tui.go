@@ -128,11 +128,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = len(m.traces) - 1
 			m.traceScroll = m.maxTraceScroll()
 		}
-		if m.mode == viewAnalytics {
-			m = m.recomputeReport()
-		} else {
-			m.reportDirty = true
-		}
+		m.reportDirty = true
 		return m, nil
 
 	case ErrorMsg:
@@ -230,6 +226,10 @@ func (m Model) handleTraceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleAnalyticsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.reportDirty {
+		m = m.recomputeReport()
+	}
+
 	switch msg.String() {
 	case "esc":
 		m.mode = viewTrace
