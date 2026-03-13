@@ -38,7 +38,16 @@ func TestPercentile(t *testing.T) {
 				return ds
 			}(),
 			pct:  0.95,
-			want: 19 * time.Millisecond, // index 18 = 19ms
+			want: 19 * time.Millisecond, // ceil(0.95*20)=19, rank 19 → index 18 = 19ms
+		},
+		{
+			name: "p95 of 2 elements returns max",
+			sorted: []time.Duration{
+				10 * time.Millisecond,
+				100 * time.Millisecond,
+			},
+			pct:  0.95,
+			want: 100 * time.Millisecond, // ceil(0.95*2)=2, rank 2 → 100ms
 		},
 		{
 			name: "p50 median",
@@ -52,13 +61,13 @@ func TestPercentile(t *testing.T) {
 				}
 			}(),
 			pct:  0.50,
-			want: 3 * time.Millisecond,
+			want: 3 * time.Millisecond, // ceil(0.50*5)=3, rank 3 → 3ms
 		},
 		{
 			name:   "p0 returns first",
 			sorted: []time.Duration{5 * time.Millisecond, 10 * time.Millisecond},
 			pct:    0.0,
-			want:   5 * time.Millisecond,
+			want:   5 * time.Millisecond, // ceil(0)=0, clamped to rank 1
 		},
 		{
 			name:   "p100 returns last",

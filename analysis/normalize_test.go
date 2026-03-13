@@ -30,9 +30,9 @@ func TestNormalizeSQL(t *testing.T) {
 			want:  "SELECT * FROM users WHERE name = ?",
 		},
 		{
-			name:  "double quoted string",
-			input: `SELECT * FROM users WHERE name = "Bob"`,
-			want:  "SELECT * FROM users WHERE name = ?",
+			name:  "double quoted identifiers preserved",
+			input: `SELECT "user_id" FROM "users" WHERE "name" = 'Bob'`,
+			want:  `SELECT "user_id" FROM "users" WHERE "name" = ?`,
 		},
 		{
 			name:  "UUID",

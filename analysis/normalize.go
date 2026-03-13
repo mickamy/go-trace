@@ -8,9 +8,10 @@ import (
 
 // SQL normalization patterns.
 var (
-	// Quoted strings: 'foo', 'O''Brien', "bar"
+	// Single-quoted string literals: 'foo', 'O''Brien'
+	// Double-quoted identifiers ("table_name") are intentionally preserved
+	// because they are identifiers in Postgres/ANSI SQL, not literals.
 	reSingleQuoted = regexp.MustCompile(`'(?:[^'\\]|\\.|\'{2})*'`)
-	reDoubleQuoted = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
 
 	// Numbers: integers and decimals (not preceded by a letter/underscore)
 	reNumber = regexp.MustCompile(`\b\d+(?:\.\d+)?\b`)
@@ -34,7 +35,6 @@ func NormalizeSQL(query string) string {
 	q := reUUID.ReplaceAllString(query, "?")
 	q = reHex.ReplaceAllString(q, "?")
 	q = reSingleQuoted.ReplaceAllString(q, "?")
-	q = reDoubleQuoted.ReplaceAllString(q, "?")
 	q = reNumber.ReplaceAllString(q, "?")
 	q = reINList.ReplaceAllString(q, "IN (?)")
 	q = reWhitespace.ReplaceAllString(q, " ")

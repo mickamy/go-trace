@@ -265,9 +265,13 @@ func discoverViewSocket() (string, error) {
 // loadMatchingGroups reads .go-trace.yaml and returns compiled MatchingGroups.
 // Returns nil (no grouping) if the config file doesn't exist or has no patterns.
 func loadMatchingGroups() (*analysis.MatchingGroups, error) {
+	if _, err := os.Stat(".go-trace.yaml"); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+
 	cfg, err := config.Load(".go-trace.yaml")
 	if err != nil {
-		return nil, nil //nolint:nilerr // missing config is fine
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 
 	if len(cfg.Analysis.MatchingGroups) == 0 {

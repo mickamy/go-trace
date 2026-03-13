@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"math"
 	"slices"
 	"time"
 )
@@ -40,19 +41,21 @@ func Compute(durations []time.Duration) Stats {
 }
 
 // Percentile returns the value at the given percentile from a sorted
-// slice of durations. pct must be in [0, 1]. The slice must be sorted
-// in ascending order; passing an unsorted slice yields undefined results.
+// slice of durations using the nearest-rank (ceiling) method.
+// pct must be in [0, 1]. The slice must be sorted in ascending order;
+// passing an unsorted slice yields undefined results.
 func Percentile(sorted []time.Duration, pct float64) time.Duration {
 	if len(sorted) == 0 {
 		return 0
 	}
-	if len(sorted) == 1 {
-		return sorted[0]
-	}
 
-	idx := int(float64(len(sorted)-1) * pct)
-	if idx >= len(sorted) {
-		idx = len(sorted) - 1
+	// Nearest-rank: ceil(pct * N) gives the 1-based rank.
+	rank := int(math.Ceil(pct * float64(len(sorted))))
+	if rank < 1 {
+		rank = 1
 	}
-	return sorted[idx]
+	if rank > len(sorted) {
+		rank = len(sorted)
+	}
+	return sorted[rank-1]
 }
