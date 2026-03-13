@@ -127,7 +127,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = len(m.traces) - 1
 			m.traceScroll = m.maxTraceScroll()
 		}
-		m.reportDirty = true
+		if m.mode == viewAnalytics {
+			m = m.recomputeReport()
+		} else {
+			m.reportDirty = true
+		}
 		return m, nil
 
 	case ErrorMsg:
@@ -153,10 +157,6 @@ func (m Model) View() string {
 			return fmt.Sprintf("error: %v\n", m.err)
 		}
 		return ""
-	}
-
-	if m.mode == viewAnalytics && m.reportDirty {
-		m = m.recomputeReport()
 	}
 
 	switch m.mode {
