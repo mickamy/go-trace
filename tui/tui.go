@@ -80,6 +80,7 @@ type Model struct {
 	// Analytics view state
 	mode            viewMode
 	report          analysis.Report
+	reportDirty     bool // true when traces changed since last report computation
 	matchingGroups  *analysis.MatchingGroups
 	analyticsTab    analyticsTab
 	analyticsSort   analysis.SortKey
@@ -126,9 +127,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = len(m.traces) - 1
 			m.traceScroll = m.maxTraceScroll()
 		}
-		if m.mode == viewAnalytics {
-			m = m.recomputeReport()
-		}
+		m.reportDirty = true
 		return m, nil
 
 	case ErrorMsg:
@@ -154,6 +153,10 @@ func (m Model) View() string {
 			return fmt.Sprintf("error: %v\n", m.err)
 		}
 		return ""
+	}
+
+	if m.mode == viewAnalytics && m.reportDirty {
+		m = m.recomputeReport()
 	}
 
 	switch m.mode {
@@ -264,6 +267,7 @@ func (m Model) recomputeReport() Model {
 		roots[i] = entry.root
 	}
 	m.report = analysis.Analyze(roots, m.matchingGroups)
+	m.reportDirty = false
 	return m
 }
 
