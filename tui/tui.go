@@ -92,6 +92,7 @@ type Model struct {
 func New(mg *analysis.MatchingGroups) Model {
 	return Model{
 		follow:         true,
+		reportDirty:    true,
 		matchingGroups: mg,
 	}
 }
@@ -186,7 +187,9 @@ func (m Model) handleTraceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "a":
 		m.mode = viewAnalytics
-		m = m.recomputeReport()
+		if m.reportDirty {
+			m = m.recomputeReport()
+		}
 		m.analyticsCursor = 0
 		m.analyticsScroll = 0
 	case "j", "down":
