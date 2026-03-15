@@ -261,11 +261,11 @@ func (m Model) handleAnalyticsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = viewTrace
 	case "tab":
-		m.analyticsTab = (m.analyticsTab + 1) % analyticsTabCount
+		m.analyticsTab = (m.analyticsTab + 1) % analyticsTab(analyticsTabCount)
 		m.analyticsCursor = 0
 		m.analyticsScroll = 0
 	case "shift+tab":
-		m.analyticsTab = (m.analyticsTab + analyticsTabCount - 1) % analyticsTabCount
+		m.analyticsTab = (m.analyticsTab + analyticsTab(analyticsTabCount) - 1) % analyticsTab(analyticsTabCount)
 		m.analyticsCursor = 0
 		m.analyticsScroll = 0
 	case "s":

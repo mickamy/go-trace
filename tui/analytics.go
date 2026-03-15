@@ -19,7 +19,7 @@ const (
 	tabN1
 )
 
-const analyticsTabCount = 4
+const analyticsTabCount = int(tabN1) + 1
 
 func (t analyticsTab) String() string {
 	switch t {

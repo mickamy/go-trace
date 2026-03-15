@@ -273,7 +273,10 @@ func sortN1(n1s []N1Detection) []N1Detection {
 	copy(out, n1s)
 	slices.SortFunc(out, func(a, b N1Detection) int {
 		if a.MaxCount != b.MaxCount {
-			return b.MaxCount - a.MaxCount
+			if b.MaxCount > a.MaxCount {
+				return 1
+			}
+			return -1
 		}
 		if a.AvgCount != b.AvgCount {
 			if b.AvgCount > a.AvgCount {
