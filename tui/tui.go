@@ -85,14 +85,15 @@ type Model struct {
 	traceScroll int
 
 	// Analytics view state
-	mode            viewMode
-	report          analysis.Report
-	reportDirty     bool // true when traces changed since last report computation
-	matchingGroups  *analysis.MatchingGroups
-	analyticsTab    analyticsTab
-	analyticsSort   analysis.SortKey
-	analyticsCursor int
-	analyticsScroll int
+	mode             viewMode
+	report           analysis.Report
+	reportDirty      bool // true when traces changed since last report computation
+	recomputePending bool // true when a recompute tick is already scheduled
+	matchingGroups   *analysis.MatchingGroups
+	analyticsTab     analyticsTab
+	analyticsSort    analysis.SortKey
+	analyticsCursor  int
+	analyticsScroll  int
 }
 
 // New creates a new TUI model.
@@ -138,12 +139,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reportDirty = true
 		// In analytics mode, schedule a deferred recomputation so the
 		// view updates without requiring user interaction.
-		if m.mode == viewAnalytics {
+		// Only schedule if no tick is already pending to avoid queue buildup.
+		if m.mode == viewAnalytics && !m.recomputePending {
+			m.recomputePending = true
 			return m, m.scheduleRecompute()
 		}
 		return m, nil
 
 	case recomputeTickMsg:
+		m.recomputePending = false
 		if m.reportDirty {
 			m = m.recomputeReport()
 		}
