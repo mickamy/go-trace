@@ -22,8 +22,8 @@ var (
 	// Hex strings: 0x-prefixed (e.g. 0xDEADBEEF)
 	reHex = regexp.MustCompile(`\b0x[0-9a-fA-F]+\b`)
 
-	// IN list compression: IN (?, ?, ..., ?) -> IN (?)
-	reINList = regexp.MustCompile(`IN\s*\(\s*\?(?:\s*,\s*\?)*\s*\)`)
+	// IN list compression: IN (?, ?, ..., ?) -> IN (?) (case-insensitive)
+	reINList = regexp.MustCompile(`(?i)\bIN\s*\(\s*\?(?:\s*,\s*\?)*\s*\)`)
 
 	// Whitespace normalization
 	reWhitespace = regexp.MustCompile(`\s+`)

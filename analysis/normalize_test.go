@@ -50,6 +50,11 @@ func TestNormalizeSQL(t *testing.T) {
 			want:  "SELECT * FROM users WHERE id IN (?)",
 		},
 		{
+			name:  "lowercase IN list compression",
+			input: "SELECT * FROM users WHERE id in (1, 2, 3)",
+			want:  "SELECT * FROM users WHERE id IN (?)",
+		},
+		{
 			name:  "whitespace normalization",
 			input: "SELECT  *  FROM   users   WHERE   id  =  1",
 			want:  "SELECT * FROM users WHERE id = ?",
