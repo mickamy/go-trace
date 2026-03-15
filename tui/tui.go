@@ -27,6 +27,13 @@ type ErrorMsg struct {
 	Err error
 }
 
+// recomputeTickMsg triggers deferred analytics recomputation.
+type recomputeTickMsg struct{}
+
+// recomputeDebounce is the minimum interval between analytics recomputations
+// triggered by incoming traces.
+const recomputeDebounce = 500 * time.Millisecond
+
 // Column widths.
 const (
 	colMarker   = 4  // "▶ " + "▾ "
@@ -129,6 +136,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.traceScroll = m.maxTraceScroll()
 		}
 		m.reportDirty = true
+		// In analytics mode, schedule a deferred recomputation so the
+		// view updates without requiring user interaction.
+		if m.mode == viewAnalytics {
+			return m, m.scheduleRecompute()
+		}
+		return m, nil
+
+	case recomputeTickMsg:
+		if m.reportDirty {
+			m = m.recomputeReport()
+		}
 		return m, nil
 
 	case ErrorMsg:
@@ -262,6 +280,12 @@ func (m Model) handleAnalyticsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.analyticsScroll = 0
 	}
 	return m, nil
+}
+
+func (m Model) scheduleRecompute() tea.Cmd {
+	return tea.Tick(recomputeDebounce, func(_ time.Time) tea.Msg {
+		return recomputeTickMsg{}
+	})
 }
 
 func (m Model) recomputeReport() Model {
