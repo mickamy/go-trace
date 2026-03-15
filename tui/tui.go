@@ -94,6 +94,11 @@ type Model struct {
 	analyticsSort    analysis.SortKey
 	analyticsCursor  int
 	analyticsScroll  int
+
+	// Cached sorted slices — recomputed when report or analyticsSort changes.
+	cachedEndpoints []analysis.EndpointStat
+	cachedSQL       []analysis.SQLStat
+	cachedFunctions []analysis.FuncStat
 }
 
 // New creates a new TUI model.
@@ -265,6 +270,7 @@ func (m Model) handleAnalyticsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.analyticsScroll = 0
 	case "s":
 		m.analyticsSort = (m.analyticsSort + 1) % analysis.SortKeyCount
+		m = m.refreshSortCache()
 	case "j", "down":
 		itemCount := m.analyticsItemCount()
 		if m.analyticsCursor < itemCount-1 {
@@ -299,6 +305,14 @@ func (m Model) recomputeReport() Model {
 	}
 	m.report = analysis.Analyze(roots, m.matchingGroups)
 	m.reportDirty = false
+	m = m.refreshSortCache()
+	return m
+}
+
+func (m Model) refreshSortCache() Model {
+	m.cachedEndpoints = analysis.SortEndpoints(m.report.Endpoints, m.analyticsSort)
+	m.cachedSQL = analysis.SortSQL(m.report.SQL, m.analyticsSort)
+	m.cachedFunctions = analysis.SortFunctions(m.report.Functions, m.analyticsSort)
 	return m
 }
 

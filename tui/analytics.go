@@ -326,13 +326,13 @@ func (m Model) analyticsItemCount() int {
 }
 
 func (m Model) sortedEndpoints() []analysis.EndpointStat {
-	return analysis.SortEndpoints(m.report.Endpoints, m.analyticsSort)
+	return m.cachedEndpoints
 }
 
 func (m Model) sortedSQL() []analysis.SQLStat {
-	return analysis.SortSQL(m.report.SQL, m.analyticsSort)
+	return m.cachedSQL
 }
 
 func (m Model) sortedFunctions() []analysis.FuncStat {
-	return analysis.SortFunctions(m.report.Functions, m.analyticsSort)
+	return m.cachedFunctions
 }
