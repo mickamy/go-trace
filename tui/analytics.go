@@ -294,6 +294,7 @@ func (m Model) renderAnalyticsFooter() string {
 		"tab: section",
 		"s: sort",
 		"j/k: scroll",
+		"g/G: top/bottom",
 		"q: quit",
 	}
 	return faint.Render("  " + strings.Join(items, "  "))
