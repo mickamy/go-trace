@@ -115,7 +115,8 @@ The default configuration instruments all Go files (`**/*.go`), excluding test f
 ### `analysis.matching_groups`
 
 Groups URIs by regex patterns in the analytics view (same approach as [alp](https://github.com/tkuchiki/alp)'s `--matching-groups`).
-Patterns are evaluated top-to-bottom; the first match wins and the pattern string itself becomes the group key.
+Patterns are automatically anchored with `^` and `$`, so they must match the entire URI path.
+They are evaluated top-to-bottom; the first match wins and the pattern string itself becomes the group key.
 URIs that don't match any pattern are displayed as-is.
 
 ## TUI keybindings
