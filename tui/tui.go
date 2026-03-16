@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/mickamy/go-trace/analysis"
 	"github.com/mickamy/go-trace/display"
 	"github.com/mickamy/go-trace/tracer"
 )
@@ -25,6 +26,13 @@ type AppExitMsg struct{}
 type ErrorMsg struct {
 	Err error
 }
+
+// recomputeTickMsg triggers deferred analytics recomputation.
+type recomputeTickMsg struct{}
+
+// recomputeDebounce is the minimum interval between analytics recomputations
+// triggered by incoming traces.
+const recomputeDebounce = 500 * time.Millisecond
 
 // Column widths.
 const (
@@ -56,6 +64,14 @@ func countSpanLines(span tracer.Span) int {
 	return n
 }
 
+// viewMode represents whether the TUI shows traces or analytics.
+type viewMode int
+
+const (
+	viewTrace viewMode = iota
+	viewAnalytics
+)
+
 // Model is the bubbletea model for the go-trace TUI.
 type Model struct {
 	traces   []traceEntry
@@ -67,11 +83,31 @@ type Model struct {
 	err      error
 
 	traceScroll int
+
+	// Analytics view state
+	mode             viewMode
+	report           analysis.Report
+	reportDirty      bool // true when traces changed since last report computation
+	recomputePending bool // true when a recompute tick is already scheduled
+	matchingGroups   *analysis.MatchingGroups
+	analyticsTab     analyticsTab
+	analyticsSort    analysis.SortKey
+	analyticsCursor  int
+	analyticsScroll  int
+
+	// Cached sorted slices — recomputed when report or analyticsSort changes.
+	cachedEndpoints []analysis.EndpointStat
+	cachedSQL       []analysis.SQLStat
+	cachedFunctions []analysis.FuncStat
 }
 
 // New creates a new TUI model.
-func New() Model {
-	return Model{follow: true}
+func New(mg *analysis.MatchingGroups) Model {
+	return Model{
+		follow:         true,
+		reportDirty:    true,
+		matchingGroups: mg,
+	}
 }
 
 // Err returns the error that caused the TUI to exit, if any.
@@ -105,6 +141,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = len(m.traces) - 1
 			m.traceScroll = m.maxTraceScroll()
 		}
+		m.reportDirty = true
+		// In analytics mode, schedule a deferred recomputation so the
+		// view updates without requiring user interaction.
+		// Only schedule if no tick is already pending to avoid queue buildup.
+		if m.mode == viewAnalytics && !m.recomputePending {
+			m.recomputePending = true
+			return m, m.scheduleRecompute()
+		}
+		return m, nil
+
+	case recomputeTickMsg:
+		m.recomputePending = false
+		if m.reportDirty {
+			m = m.recomputeReport()
+		}
 		return m, nil
 
 	case ErrorMsg:
@@ -132,9 +183,14 @@ func (m Model) View() string {
 		return ""
 	}
 
-	traceBox := m.renderTracePane()
-	footer := m.renderFooter()
-	return traceBox + "\n" + footer
+	switch m.mode {
+	case viewTrace:
+		return m.renderTracePane() + "\n" + m.renderFooter()
+	case viewAnalytics:
+		return m.renderAnalyticsPane() + "\n" + m.renderAnalyticsFooter()
+	}
+
+	return m.renderTracePane() + "\n" + m.renderFooter()
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -142,6 +198,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
+	}
+
+	if m.mode == viewAnalytics {
+		return m.handleAnalyticsKey(msg)
+	}
+	return m.handleTraceKey(msg)
+}
+
+func (m Model) handleTraceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "a":
+		m.mode = viewAnalytics
+		if m.reportDirty {
+			m = m.recomputeReport()
+		}
+		m.analyticsCursor = 0
+		m.analyticsScroll = 0
 	case "j", "down":
 		if m.cursor < len(m.traces)-1 {
 			m.cursor++
@@ -177,6 +250,86 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) handleAnalyticsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.reportDirty {
+		m = m.recomputeReport()
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.mode = viewTrace
+	case "tab":
+		m.analyticsTab = (m.analyticsTab + 1) % analyticsTab(analyticsTabCount)
+		m.analyticsCursor = 0
+		m.analyticsScroll = 0
+	case "shift+tab":
+		m.analyticsTab = (m.analyticsTab + analyticsTab(analyticsTabCount) - 1) % analyticsTab(analyticsTabCount)
+		m.analyticsCursor = 0
+		m.analyticsScroll = 0
+	case "s":
+		m.analyticsSort = (m.analyticsSort + 1) % analysis.SortKeyCount
+		m = m.refreshSortCache()
+	case "j", "down":
+		itemCount := m.analyticsItemCount()
+		if m.analyticsCursor < itemCount-1 {
+			m.analyticsCursor++
+		}
+		m = m.ensureAnalyticsCursorVisible()
+	case "k", "up":
+		if m.analyticsCursor > 0 {
+			m.analyticsCursor--
+		}
+		m = m.ensureAnalyticsCursorVisible()
+	case "G":
+		m.analyticsCursor = max(m.analyticsItemCount()-1, 0)
+		m.analyticsScroll = m.maxAnalyticsScroll()
+	case "g":
+		m.analyticsCursor = 0
+		m.analyticsScroll = 0
+	}
+	return m, nil
+}
+
+func (m Model) scheduleRecompute() tea.Cmd {
+	return tea.Tick(recomputeDebounce, func(_ time.Time) tea.Msg {
+		return recomputeTickMsg{}
+	})
+}
+
+func (m Model) recomputeReport() Model {
+	roots := make([]tracer.Span, len(m.traces))
+	for i, entry := range m.traces {
+		roots[i] = entry.root
+	}
+	m.report = analysis.Analyze(roots, m.matchingGroups)
+	m.reportDirty = false
+	m = m.refreshSortCache()
+	return m
+}
+
+func (m Model) refreshSortCache() Model {
+	m.cachedEndpoints = analysis.SortEndpoints(m.report.Endpoints, m.analyticsSort)
+	m.cachedSQL = analysis.SortSQL(m.report.SQL, m.analyticsSort)
+	m.cachedFunctions = analysis.SortFunctions(m.report.Functions, m.analyticsSort)
+	return m
+}
+
+func (m Model) ensureAnalyticsCursorVisible() Model {
+	// The cursor row offset is: 2 (tab bar + blank) + 2 (sort label + header) + cursorIndex
+	offset := 4 + m.analyticsCursor
+	visibleRows := m.analyticsVisibleRows()
+
+	if offset < m.analyticsScroll {
+		m.analyticsScroll = offset
+	}
+	if offset >= m.analyticsScroll+visibleRows {
+		m.analyticsScroll = offset - visibleRows + 1
+	}
+	m.analyticsScroll = min(m.analyticsScroll, m.maxAnalyticsScroll())
+	m.analyticsScroll = max(m.analyticsScroll, 0)
+	return m
 }
 
 // displayLines builds all visible lines with header, cursor/chevron and columns.
@@ -375,6 +528,7 @@ func (m Model) renderBox(innerWidth int, content, title string) string {
 func (m Model) renderFooter() string {
 	faint := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	items := []string{
+		"a: analytics",
 		"j/k: navigate",
 		"space: collapse/expand",
 		"ctrl+d/u: page",

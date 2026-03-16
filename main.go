@@ -15,6 +15,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/mickamy/go-trace/analysis"
 	"github.com/mickamy/go-trace/config"
 	"github.com/mickamy/go-trace/display"
 	"github.com/mickamy/go-trace/instrument"
@@ -42,7 +43,7 @@ func main() {
 	case "run":
 		err = runCmd(flag.Args()[1:])
 	case "view":
-		err = viewCmd()
+		err = viewCmd(flag.Args()[1:])
 	case "version":
 		fmt.Println("go-trace", version)
 	default:
@@ -56,7 +57,7 @@ func main() {
 }
 
 func runCmd(args []string) error {
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	configPath := fs.String("config", ".go-trace.yaml", "config file path")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: go-trace run [flags] <dir>\n\n")
@@ -64,6 +65,9 @@ func runCmd(args []string) error {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return fmt.Errorf("parse flags: %w", err)
 	}
 
@@ -178,7 +182,20 @@ func runPlain(ctx context.Context, col *tracer.Collector, binPath, socketPath st
 	return nil
 }
 
-func viewCmd() error {
+func viewCmd(args []string) error {
+	fs := flag.NewFlagSet("view", flag.ContinueOnError)
+	configPath := fs.String("config", ".go-trace.yaml", "config file path")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: go-trace view [flags]\n\nFlags:\n")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("parse flags: %w", err)
+	}
+
 	sockPath, err := discoverViewSocket()
 	if err != nil {
 		return err
@@ -187,7 +204,12 @@ func viewCmd() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	model := tui.New()
+	mg, err := loadMatchingGroups(*configPath)
+	if err != nil {
+		return err
+	}
+
+	model := tui.New(mg)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	bridge := tui.NewBridge(p)
@@ -254,6 +276,29 @@ func discoverViewSocket() (string, error) {
 		}
 		return "", errors.New(b.String())
 	}
+}
+
+// loadMatchingGroups reads the config file and returns compiled MatchingGroups.
+// Returns nil (no grouping) if the config file doesn't exist or has no patterns.
+func loadMatchingGroups(path string) (*analysis.MatchingGroups, error) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil, nil //nolint:nilnil // no config file means no grouping
+	}
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+
+	if len(cfg.Analysis.MatchingGroups) == 0 {
+		return nil, nil //nolint:nilnil // no patterns means no grouping
+	}
+
+	mg, err := analysis.NewMatchingGroups(cfg.Analysis.MatchingGroups)
+	if err != nil {
+		return nil, fmt.Errorf("compile matching groups: %w", err)
+	}
+	return mg, nil
 }
 
 // addRuntimeDep adds github.com/mickamy/go-trace as a dependency
