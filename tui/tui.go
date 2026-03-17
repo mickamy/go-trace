@@ -228,8 +228,8 @@ func (m Model) handleTraceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.cursor < len(m.traces)-1 {
 			m.cursor++
-			m.follow = m.cursor >= len(m.traces)-1
 			m = m.ensureCursorVisible()
+			m.follow = m.cursor >= len(m.traces)-1 && m.traceScroll >= m.maxTraceScroll()
 		}
 	case "k", "up":
 		cursorTop := m.cursorLineOffset()
