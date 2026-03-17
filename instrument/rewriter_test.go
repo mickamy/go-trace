@@ -403,3 +403,112 @@ func main() {
 		t.Errorf("Middleware count = %d, want 1 (should not double-wrap)", count)
 	}
 }
+
+// --- http.Server literal tests ---
+
+func TestRewrite_HTTPServerLiteral(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "net/http"
+
+func main() {
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+	_ = srv
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	result := string(got)
+	if !strings.Contains(result, "gotraceruntime.Middleware(__gotraceTracer, mux)") {
+		t.Errorf("expected Handler wrapped with Middleware, got:\n%s", result)
+	}
+}
+
+func TestRewrite_HTTPServerLiteral_AlreadyWrapped(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import (
+	"net/http"
+	gotraceruntime "github.com/mickamy/go-trace/runtime"
+)
+
+func main() {
+	srv := &http.Server{
+		Handler: gotraceruntime.Middleware(__gotraceTracer, mux),
+	}
+	_ = srv
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	count := strings.Count(string(got), "Middleware")
+	if count != 1 {
+		t.Errorf("Middleware count = %d, want 1 (should not double-wrap)", count)
+	}
+}
+
+func TestRewrite_HTTPServerLiteral_NoHandlerField(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "net/http"
+
+func main() {
+	srv := &http.Server{
+		Addr: ":8080",
+	}
+	_ = srv
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	if strings.Contains(string(got), "Middleware") {
+		t.Error("should not add Middleware when Handler field is absent")
+	}
+}
+
+func TestRewrite_HTTPServerLiteral_NilHandler(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package main
+
+import "net/http"
+
+func main() {
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: nil,
+	}
+	_ = srv
+}
+`)
+
+	got, err := instrument.Rewrite(src)
+	if err != nil {
+		t.Fatalf("Rewrite() error: %v", err)
+	}
+
+	if strings.Contains(string(got), "Middleware") {
+		t.Error("should not wrap nil Handler")
+	}
+}

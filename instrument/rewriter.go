@@ -27,8 +27,9 @@ func Rewrite(src []byte) ([]byte, error) {
 	funcsMod := rewriteFuncs(file)
 	sqlMod := rewriteSQLOpen(file)
 	httpMod := rewriteHTTPListenAndServe(file)
+	httpSrvMod := rewriteHTTPServerLiteral(file)
 
-	if !funcsMod && !sqlMod && !httpMod {
+	if !funcsMod && !sqlMod && !httpMod && !httpSrvMod {
 		return src, nil
 	}
 
@@ -188,6 +189,76 @@ func rewriteHTTPListenAndServe(file *ast.File) bool {
 			},
 		}
 		modified = true
+		return true
+	})
+
+	return modified
+}
+
+// rewriteHTTPServerLiteral wraps the Handler field in http.Server{} composite
+// literals with gotraceruntime.Middleware.
+// This handles the common pattern: &http.Server{Handler: mux}
+// Returns true if any literal was rewritten.
+func rewriteHTTPServerLiteral(file *ast.File) bool {
+	if !hasImport(file, "http", "net/http") {
+		return false
+	}
+
+	modified := false
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+
+		// Match http.Server type.
+		sel, ok := lit.Type.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if ident.Name != "http" || sel.Sel.Name != "Server" {
+			return true
+		}
+
+		// Find the Handler field.
+		for _, elt := range lit.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok || key.Name != "Handler" {
+				continue
+			}
+
+			// Skip nil handler.
+			if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "nil" {
+				continue
+			}
+
+			// Skip if already wrapped.
+			if isMiddlewareWrapped(kv.Value) {
+				continue
+			}
+
+			kv.Value = &ast.CallExpr{
+				Fun: &ast.SelectorExpr{
+					X:   ast.NewIdent("gotraceruntime"),
+					Sel: ast.NewIdent("Middleware"),
+				},
+				Args: []ast.Expr{
+					ast.NewIdent("__gotraceTracer"),
+					kv.Value,
+				},
+			}
+			modified = true
+		}
+
 		return true
 	})
 
