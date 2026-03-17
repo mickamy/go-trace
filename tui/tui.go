@@ -216,25 +216,47 @@ func (m Model) handleTraceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.analyticsCursor = 0
 		m.analyticsScroll = 0
 	case "j", "down":
+		if m.cursor >= 0 && m.cursor < len(m.traces) && !m.traces[m.cursor].collapsed {
+			cursorBottom := m.cursorLineOffset() + m.traces[m.cursor].lineCount() - 1
+			viewBottom := m.traceScroll + m.traceVisibleRows() - 1
+			if cursorBottom > viewBottom {
+				// Children of current trace extend below viewport; scroll down.
+				m.traceScroll = min(m.traceScroll+1, m.maxTraceScroll())
+				m.follow = m.traceScroll >= m.maxTraceScroll()
+				break
+			}
+		}
 		if m.cursor < len(m.traces)-1 {
 			m.cursor++
+			m.follow = m.cursor >= len(m.traces)-1
+			m = m.ensureCursorVisible()
 		}
-		m.follow = m.cursor >= len(m.traces)-1
-		m = m.ensureCursorVisible()
 	case "k", "up":
+		cursorTop := m.cursorLineOffset()
+		if cursorTop < m.traceScroll {
+			// Root of current trace is above viewport; scroll up.
+			m.traceScroll = max(m.traceScroll-1, 0)
+			m.follow = false
+			break
+		}
 		if m.cursor > 0 {
 			m.cursor--
+			m.follow = false
+			m = m.ensureCursorVisible()
+		} else if m.traceScroll > 0 {
+			m.traceScroll = max(m.traceScroll-1, 0)
+			m.follow = false
 		}
-		m.follow = false
-		m = m.ensureCursorVisible()
 	case "ctrl+d":
-		m.cursor = min(m.cursor+m.traceVisibleRows()/2, max(len(m.traces)-1, 0))
-		m.follow = m.cursor >= len(m.traces)-1
-		m = m.ensureCursorVisible()
+		half := m.traceVisibleRows() / 2
+		m.traceScroll = min(m.traceScroll+half, m.maxTraceScroll())
+		m.cursor = m.traceAtLine(m.traceScroll)
+		m.follow = m.traceScroll >= m.maxTraceScroll()
 	case "ctrl+u":
-		m.cursor = max(m.cursor-m.traceVisibleRows()/2, 0)
+		half := m.traceVisibleRows() / 2
+		m.traceScroll = max(m.traceScroll-half, 0)
+		m.cursor = m.traceAtLine(m.traceScroll)
 		m.follow = false
-		m = m.ensureCursorVisible()
 	case "G":
 		m.cursor = max(len(m.traces)-1, 0)
 		m.traceScroll = m.maxTraceScroll()
@@ -246,10 +268,39 @@ func (m Model) handleTraceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		if m.cursor >= 0 && m.cursor < len(m.traces) {
 			m.traces[m.cursor].collapsed = !m.traces[m.cursor].collapsed
+			if !m.traces[m.cursor].collapsed {
+				// Expanding: scroll to show children. If the trace is taller
+				// than the viewport, put the root at the top.
+				offset := m.cursorLineOffset()
+				entryLines := m.traces[m.cursor].lineCount()
+				entryEnd := offset + entryLines - 1
+				viewEnd := m.traceScroll + m.traceVisibleRows() - 1
+				if entryEnd > viewEnd {
+					if entryLines > m.traceVisibleRows() {
+						m.traceScroll = offset
+					} else {
+						m.traceScroll = entryEnd - m.traceVisibleRows() + 1
+					}
+				}
+			}
 			m = m.clampScroll()
 		}
 	}
 	return m, nil
+}
+
+// traceAtLine returns the index of the trace entry that contains the given
+// display line offset.
+func (m Model) traceAtLine(line int) int {
+	offset := 1 // header row
+	for i, entry := range m.traces {
+		end := offset + entry.lineCount()
+		if line < end {
+			return i
+		}
+		offset = end
+	}
+	return max(len(m.traces)-1, 0)
 }
 
 func (m Model) handleAnalyticsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
