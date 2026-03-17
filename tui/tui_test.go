@@ -14,7 +14,8 @@ import (
 // makeSpanWithChildren creates a root span with n SQL child spans.
 func makeSpanWithChildren(n int) tracer.Span {
 	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	root := tracer.NewSpan("root", "trace1", "Repository.ListUsers", tracer.SpanKindFunction, now, now.Add(100*time.Millisecond))
+	end := now.Add(100 * time.Millisecond)
+	root := tracer.NewSpan("root", "trace1", "Repository.ListUsers", tracer.SpanKindFunction, now, end)
 	for i := range n {
 		child := tracer.NewSpan(
 			fmt.Sprintf("child-%d", i),
@@ -35,30 +36,40 @@ func keyMsg(s string) tea.KeyMsg {
 }
 
 // setupModel creates a Model with the given window size and traces already added.
-func setupModel(t *testing.T, width, height int, traces ...tracer.Span) tui.Model {
+func setupModel(t *testing.T, height int, traces ...tracer.Span) tui.Model {
 	t.Helper()
 
 	m := tui.New(nil)
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
-	m = updated.(tui.Model)
+	m = updateModel(t, m, tea.WindowSizeMsg{Width: 120, Height: height})
 
 	for _, root := range traces {
-		updated, _ = m.Update(tui.TraceMsg{Root: root})
-		m = updated.(tui.Model)
+		m = updateModel(t, m, tui.TraceMsg{Root: root})
 	}
 	return m
 }
 
+// updateModel sends a message to the model and returns the updated model.
+func updateModel(t *testing.T, m tui.Model, msg tea.Msg) tui.Model {
+	t.Helper()
+
+	updated, _ := m.Update(msg)
+	model, ok := updated.(tui.Model)
+	if !ok {
+		t.Fatal("Update did not return tui.Model")
+	}
+	return model
+}
+
 // pressKey sends a key message and returns the updated model.
-func pressKey(m tui.Model, s string) tui.Model {
-	updated, _ := m.Update(keyMsg(s))
-	return updated.(tui.Model)
+func pressKey(t *testing.T, m tui.Model, s string) tui.Model {
+	t.Helper()
+	return updateModel(t, m, keyMsg(s))
 }
 
 // pressCtrl sends a ctrl key message and returns the updated model.
-func pressCtrl(m tui.Model, keyType tea.KeyType) tui.Model {
-	updated, _ := m.Update(tea.KeyMsg{Type: keyType})
-	return updated.(tui.Model)
+func pressCtrl(t *testing.T, m tui.Model, keyType tea.KeyType) tui.Model {
+	t.Helper()
+	return updateModel(t, m, tea.KeyMsg{Type: keyType})
 }
 
 func TestScrollDownWithinExpandedTrace(t *testing.T) {
@@ -68,10 +79,10 @@ func TestScrollDownWithinExpandedTrace(t *testing.T) {
 
 	// Height 24: visible rows = 24-4 = 20.
 	// One trace with 50 children = 51 lines (root + 50 children).
-	m := setupModel(t, 120, 24, makeSpanWithChildren(50))
+	m := setupModel(t, 24, makeSpanWithChildren(50))
 
 	// Expand the trace (starts collapsed).
-	m = pressKey(m, " ")
+	m = pressKey(t, m, " ")
 
 	// cursor should be at trace 0
 	if got := m.TraceCursor(); got != 0 {
@@ -80,7 +91,7 @@ func TestScrollDownWithinExpandedTrace(t *testing.T) {
 
 	// Press j multiple times; should scroll within the trace, not move cursor.
 	for range 10 {
-		m = pressKey(m, "j")
+		m = pressKey(t, m, "j")
 	}
 
 	if got := m.TraceCursor(); got != 0 {
@@ -96,18 +107,18 @@ func TestScrollUpWithinExpandedTrace(t *testing.T) {
 	ctx := t.Context()
 	_ = ctx
 
-	m := setupModel(t, 120, 24, makeSpanWithChildren(50))
-	m = pressKey(m, " ") // expand
+	m := setupModel(t, 24, makeSpanWithChildren(50))
+	m = pressKey(t, m, " ") // expand
 
 	// Scroll down first.
 	for range 10 {
-		m = pressKey(m, "j")
+		m = pressKey(t, m, "j")
 	}
 	scrollAfterDown := m.TraceScroll()
 
 	// Now scroll back up.
 	for range 10 {
-		m = pressKey(m, "k")
+		m = pressKey(t, m, "k")
 	}
 
 	if got := m.TraceScroll(); got >= scrollAfterDown {
@@ -125,11 +136,11 @@ func TestJMovesToNextTraceWhenCollapsed(t *testing.T) {
 
 	span1 := makeSpanWithChildren(5)
 	span2 := makeSpanWithChildren(3)
-	m := setupModel(t, 120, 40, span1, span2)
+	m := setupModel(t, 40, span1, span2)
 
 	// Both traces are collapsed. Press j to move to next trace.
-	m = pressKey(m, "g") // go to top
-	m = pressKey(m, "j")
+	m = pressKey(t, m, "g") // go to top
+	m = pressKey(t, m, "j")
 
 	if got := m.TraceCursor(); got != 1 {
 		t.Errorf("cursor should move to 1, got %d", got)
@@ -141,11 +152,11 @@ func TestCtrlDScrollsByHalfPage(t *testing.T) {
 	ctx := t.Context()
 	_ = ctx
 
-	m := setupModel(t, 120, 24, makeSpanWithChildren(50))
-	m = pressKey(m, " ") // expand
+	m := setupModel(t, 24, makeSpanWithChildren(50))
+	m = pressKey(t, m, " ") // expand
 
 	initialScroll := m.TraceScroll()
-	m = pressCtrl(m, tea.KeyCtrlD)
+	m = pressCtrl(t, m, tea.KeyCtrlD)
 
 	half := (24 - 4) / 2 // visibleRows / 2 = 10
 	wantScroll := initialScroll + half
@@ -160,16 +171,16 @@ func TestCtrlUScrollsUp(t *testing.T) {
 	ctx := t.Context()
 	_ = ctx
 
-	m := setupModel(t, 120, 24, makeSpanWithChildren(50))
-	m = pressKey(m, " ") // expand
+	m := setupModel(t, 24, makeSpanWithChildren(50))
+	m = pressKey(t, m, " ") // expand
 
 	// Scroll down first.
-	m = pressCtrl(m, tea.KeyCtrlD)
-	m = pressCtrl(m, tea.KeyCtrlD)
+	m = pressCtrl(t, m, tea.KeyCtrlD)
+	m = pressCtrl(t, m, tea.KeyCtrlD)
 	scrollAfterDown := m.TraceScroll()
 
 	// Scroll up.
-	m = pressCtrl(m, tea.KeyCtrlU)
+	m = pressCtrl(t, m, tea.KeyCtrlU)
 
 	half := (24 - 4) / 2
 	wantScroll := scrollAfterDown - half
@@ -186,11 +197,11 @@ func TestSpaceExpandAdjustsScrollForLargeTrace(t *testing.T) {
 
 	// Height 14: visible rows = 14-4 = 10.
 	// Trace with 30 children = 31 lines (taller than viewport).
-	m := setupModel(t, 120, 14, makeSpanWithChildren(30))
+	m := setupModel(t, 14, makeSpanWithChildren(30))
 
 	// The trace root is at line 1 (after header).
 	// Expand: trace is taller than viewport, root should be at the top.
-	m = pressKey(m, " ")
+	m = pressKey(t, m, " ")
 
 	// Root line offset is 1; traceScroll should be 1 so root is visible at the top.
 	if got := m.TraceScroll(); got != 1 {
@@ -207,13 +218,13 @@ func TestSpaceExpandSmallTraceShowsAllChildren(t *testing.T) {
 	// Height 24: visible rows = 20.
 	span1 := makeSpanWithChildren(2) // collapsed: 1 line
 	span2 := makeSpanWithChildren(5) // expanded: 6 lines
-	m := setupModel(t, 120, 24, span1, span2)
+	m := setupModel(t, 24, span1, span2)
 
 	// Move cursor to second trace.
-	m = pressKey(m, "j")
+	m = pressKey(t, m, "j")
 
 	// Expand second trace.
-	m = pressKey(m, " ")
+	m = pressKey(t, m, " ")
 
 	// Second trace should be fully visible. No scroll needed for small traces.
 	if got := m.TraceScroll(); got < 0 {
@@ -226,8 +237,8 @@ func TestFollowDisabledOnScrollUp(t *testing.T) {
 	ctx := t.Context()
 	_ = ctx
 
-	m := setupModel(t, 120, 24, makeSpanWithChildren(50))
-	m = pressKey(m, " ") // expand
+	m := setupModel(t, 24, makeSpanWithChildren(50))
+	m = pressKey(t, m, " ") // expand
 
 	// In follow mode initially.
 	if !m.TraceFollow() {
@@ -235,7 +246,7 @@ func TestFollowDisabledOnScrollUp(t *testing.T) {
 	}
 
 	// Press k to scroll up.
-	m = pressKey(m, "k")
+	m = pressKey(t, m, "k")
 
 	if m.TraceFollow() {
 		t.Errorf("follow should be disabled after pressing k")
