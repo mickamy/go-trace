@@ -74,8 +74,6 @@ func pressCtrl(t *testing.T, m tui.Model, keyType tea.KeyType) tui.Model {
 
 func TestScrollDownWithinExpandedTrace(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	_ = ctx
 
 	// Height 24: visible rows = 24-4 = 20.
 	// One trace with 50 children = 51 lines (root + 50 children).
@@ -104,8 +102,6 @@ func TestScrollDownWithinExpandedTrace(t *testing.T) {
 
 func TestScrollUpWithinExpandedTrace(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	_ = ctx
 
 	m := setupModel(t, 24, makeSpanWithChildren(50))
 	m = pressKey(t, m, " ") // expand
@@ -131,8 +127,6 @@ func TestScrollUpWithinExpandedTrace(t *testing.T) {
 
 func TestJMovesToNextTraceWhenCollapsed(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	_ = ctx
 
 	span1 := makeSpanWithChildren(5)
 	span2 := makeSpanWithChildren(3)
@@ -149,8 +143,6 @@ func TestJMovesToNextTraceWhenCollapsed(t *testing.T) {
 
 func TestCtrlDScrollsByHalfPage(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	_ = ctx
 
 	m := setupModel(t, 24, makeSpanWithChildren(50))
 	m = pressKey(t, m, " ") // expand
@@ -168,8 +160,6 @@ func TestCtrlDScrollsByHalfPage(t *testing.T) {
 
 func TestCtrlUScrollsUp(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	_ = ctx
 
 	m := setupModel(t, 24, makeSpanWithChildren(50))
 	m = pressKey(t, m, " ") // expand
@@ -192,8 +182,6 @@ func TestCtrlUScrollsUp(t *testing.T) {
 
 func TestSpaceExpandAdjustsScrollForLargeTrace(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	_ = ctx
 
 	// Height 14: visible rows = 14-4 = 10.
 	// Trace with 30 children = 31 lines (taller than viewport).
@@ -211,8 +199,6 @@ func TestSpaceExpandAdjustsScrollForLargeTrace(t *testing.T) {
 
 func TestSpaceExpandSmallTraceShowsAllChildren(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	_ = ctx
 
 	// Two traces, second one has 5 children (6 lines).
 	// Height 24: visible rows = 20.
@@ -234,8 +220,6 @@ func TestSpaceExpandSmallTraceShowsAllChildren(t *testing.T) {
 
 func TestFollowDisabledOnScrollUp(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	_ = ctx
 
 	m := setupModel(t, 24, makeSpanWithChildren(50))
 	m = pressKey(t, m, " ") // expand
