@@ -284,6 +284,7 @@ func (m Model) handleTraceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m = m.clampScroll()
+			m.follow = m.traceScroll >= m.maxTraceScroll()
 		}
 	}
 	return m, nil

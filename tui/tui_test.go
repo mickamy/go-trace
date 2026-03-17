@@ -219,21 +219,21 @@ func TestSpaceExpandSmallTraceShowsAllChildren(t *testing.T) {
 	}
 }
 
-func TestFollowDisabledOnScrollUp(t *testing.T) {
+func TestFollowDisabledAfterExpandingLargeTrace(t *testing.T) {
 	t.Parallel()
 
 	m := setupModel(t, 24, makeSpanWithChildren(50))
-	m = pressKey(t, m, " ") // expand
 
-	// In follow mode initially.
+	// Follow mode is active after adding a trace (collapsed, fits in viewport).
 	if !m.TraceFollow() {
 		t.Fatal("should be in follow mode after adding trace")
 	}
 
-	// Press k to scroll up.
-	m = pressKey(t, m, "k")
+	// Expanding a trace taller than viewport scrolls root to top,
+	// which is no longer at the bottom — follow should be disabled.
+	m = pressKey(t, m, " ")
 
 	if m.TraceFollow() {
-		t.Errorf("follow should be disabled after pressing k")
+		t.Errorf("follow should be disabled after expanding large trace")
 	}
 }
