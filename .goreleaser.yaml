@@ -25,6 +25,7 @@ archives:
 
 brews:
   - name: go-trace
+    directory: Formula
     homepage: https://github.com/mickamy/go-trace
     description: Instantly visualize request flows in your Go application — no infrastructure, no code changes.
     install: |
