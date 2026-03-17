@@ -212,9 +212,10 @@ func TestSpaceExpandSmallTraceShowsAllChildren(t *testing.T) {
 	// Expand second trace.
 	m = pressKey(t, m, " ")
 
-	// Second trace should be fully visible. No scroll needed for small traces.
-	if got := m.TraceScroll(); got < 0 {
-		t.Errorf("traceScroll should be >= 0, got %d", got)
+	// Both traces fit in viewport (1 collapsed + 6 expanded + 1 header = 8 lines < 20 visible).
+	// Scroll should remain at 0.
+	if got := m.TraceScroll(); got != 0 {
+		t.Errorf("traceScroll should be 0 (no scroll needed), got %d", got)
 	}
 }
 
