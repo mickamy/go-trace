@@ -23,7 +23,7 @@ import (
 	"github.com/mickamy/go-trace/tui"
 )
 
-const version = "dev"
+var version = "dev" //nolint:gochecknoglobals // set by -ldflags at build time
 
 const goTraceModule = "github.com/mickamy/go-trace"
 
